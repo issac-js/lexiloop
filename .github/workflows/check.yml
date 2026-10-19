@@ -28,6 +28,8 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
+      - name: LF source and checkout check
+        run: python -B tools/check_line_endings.py
       - name: Offline checks
         run: python -B tools/ci_check.py
       - name: Package exact source revision
