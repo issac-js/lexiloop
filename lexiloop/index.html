@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#14875a">
+<meta name="description" content="英语语料表达与单词记忆工具：AI 生成地道固定搭配与例句，按记忆规律安排复习，手机与电脑进度同步。">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="搭配记忆">
+<title>英语搭配记忆</title>
+<link rel="manifest" href="manifest.webmanifest?v=108">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<meta name="format-detection" content="telephone=no">
+<link rel="apple-touch-icon" sizes="180x180" href="icon-180.png">
+<link rel="apple-touch-icon" sizes="192x192" href="icon-192.png">
+<script>
+  // 主题要在样式生效前定下来，否则会闪一下默认色
+  try {
+    var t = localStorage.getItem('lexiloop.theme.v1')
+    document.documentElement.setAttribute('data-theme', t === 'violet' ? 'violet' : 'green')
+  } catch (e) { document.documentElement.setAttribute('data-theme', 'green') }
+</script>
+<link rel="stylesheet" href="styles.css?v=108">
+</head>
+<body>
+<div id="root" class="root">
+  <div class="boot">
+    <div class="boot-mark"></div>
+    <p>正在启动…</p>
+  </div>
+</div>
+<div id="toast-wrap" class="toast-wrap" aria-live="polite"></div>
+<div id="modal-wrap" class="modal-wrap" hidden></div>
+<!-- 云服务 SDK：随应用一起发布的**同源副本**（lexiloop/vendor/）。
+     为什么不直接用 CDN：实测 cdn.jsdelivr.net 在本机会被间歇性重置
+     （浏览器 net::ERR_CONNECTION_RESET / Node ECONNRESET）。SDK 一旦加载失败，
+     认证、数据同步、云端 AI 三条链路会**静默失效**——页面照常打开、控制台零异常，
+     用户只会觉得"功能没了"，这是最难排查的一类故障。
+     内置同源后：不依赖外部 CDN、能被 Service Worker 缓存、离线也能起。
+     下面一行是 CDN 兜底：万一 vendor 文件缺失，用 document.write 在解析期**同步**补上
+     （必须同步，否则后面的 js/app.js 是 type=module，会先于异步插入的脚本执行）。 -->
+<script src="vendor/workbuddy-cloud-sdk.js"></script>
+<script>window.WorkBuddyCloud||document.write('<script src="https://cdn.jsdelivr.net/npm/@tencent-ai/workbuddy-cloud-sdk@dev/lib/index.global.js"><\/script>')</script>
+<script type="module" src="js/app.js?v=108"></script>
+<script>
+  // 启动看门狗：一直转圈是最糟糕的状态——用户既不知道原因，也没法自救。
+  // 9 秒还没起来就换成一屏"能点的"提示（强制刷新 / 清缓存重载）。
+  (function () {
+    function rescue() {
+      if (window.__lexiloopBooted) return
+      var root = document.getElementById('root')
+      if (!root || !root.querySelector('.boot')) return
+      root.innerHTML =
+        '<div class="boot" style="gap:12px;padding:24px;text-align:center;">' +
+        '<div style="font-size:15px;font-weight:600;">启动没能完成</div>' +
+        '<p style="margin:0;font-size:12.5px;line-height:1.7;opacity:.75;max-width:30em;">' +
+        '多半是浏览器还在用旧缓存（旧版离线壳）。先点「强制刷新」；若仍不行，用「清缓存并重载」。</p>' +
+        '<button id="boot-reload" style="margin-top:6px;padding:10px 18px;border:0;border-radius:10px;' +
+        'background:#14875a;color:#fff;font-size:14px;font-weight:600;">强制刷新</button>' +
+        '<button id="boot-reset" style="margin-top:8px;padding:9px 18px;border:1px solid rgba(0,0,0,.15);' +
+        'border-radius:10px;background:transparent;color:inherit;font-size:13px;">清缓存并重载</button>' +
+        '</div>'
+      var a = document.getElementById('boot-reload')
+      var b = document.getElementById('boot-reset')
+      if (a) a.onclick = function () { location.replace(location.pathname + '?f=' + Date.now()) }
+      if (b) b.onclick = async function () {
+        try {
+          if (window.caches) {
+            var ks = await caches.keys()
+            await Promise.all(ks.map(function (k) { return caches.delete(k) }))
+          }
+          if (navigator.serviceWorker) {
+            var rs = await navigator.serviceWorker.getRegistrations()
+            await Promise.all(rs.map(function (r) { return r.unregister() }))
+          }
+        } catch (e) { /* 清不掉也照样重载，尽力而为 */ }
+        location.replace(location.pathname + '?f=' + Date.now())
+      }
+    }
+    setTimeout(rescue, 9000)
+  })()
+</script>
+</body>
+</html>
