@@ -1,0 +1,59 @@
+# ============================================================
+# LexiLoop .gitignore
+# 原则：源码与文档入库；数据、密钥、依赖、可再生产物一律排除
+# ============================================================
+
+# ---- 环境变量：真实配置永不入库，只保留 .env.example ----
+.env
+.env.*
+!.env.example
+
+# ---- 依赖目录 ----
+node_modules/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# ---- 缓存与日志 ----
+.cache/
+*.log
+logs/
+playwright-report/
+test-results/
+
+# ---- 可重新生成的构建产物 ----
+dist/
+build/
+*.tsbuildinfo
+
+# ---- 本地 agent / 平台状态（与本仓库无关）----
+.workbuddy/
+*.genie
+
+# ---- 生产数据与用户数据：禁止入库 ----
+# 历史迁移 SQL 含生产库内容（owner_id、词条 payload），一律排除；
+# 库表结构见 db/schema.md，迁移策略见 db/migrations/README.md
+backup/
+import/
+*.sql
+!db/migrations/*.sql
+*.sqlite
+*.sqlite3
+*.db
+*.dump
+
+# ---- 截图与测试输出（随时可重新生成）----
+*.png
+!lexiloop/icon-*.png
+tools/*.json
+
+# ---- 本地损坏文件与一次性调试脚本（不入库）----
+tools/ocr-crop.py
+_debug_*.js
+
+# ---- 系统杂物 ----
+.DS_Store
+Thumbs.db
+desktop.ini
+

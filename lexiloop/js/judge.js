@@ -1,0 +1,419 @@
+/**
+ * judge.js — 作答判定内核
+ *
+ * 为什么把判定单独拆出来：view / game / labs 三处都要判分，判定规则必须**只有一个来源**。
+ * 之前 judgeTyped 藏在 views.js 里被另外两个模块反向 import，规则一改就得三处对齐。
+ *
+ * 核心设计：判定结果不是"对/错"两态，而是**四态**。
+ *   ① hit    目标表达正确 —— 真正要练的东西提取出来了
+ *   ② alt    语言/意思正确，但用的是别的表达 —— 英语没错，只是没命中本题目标
+ *   ③ wrong  语言或意思错误
+ *   ④ unsure 无法可靠判断，需复核 —— **不判错**
+ *
+ * 为什么必须有 ②：例句填空"The manager had to ___ several complaints"，
+ * 中文提示是"处理"。用户写 address / handle / cope with 都是地道英语，
+ * 判成"不对"是在惩罚正确的英语，还会把用户推进 leech（反复失败的错题），
+ * 让算法误以为这张卡难 —— 这是最伤人的一类 bug：用户越懂英语，越容易被判错。
+ *
+ * 判定顺序（从严到宽，任一命中即停）：
+ *   归一化精确 → 字母序列（手误漏空格）→ 词形变化/英美拼写 → 实词覆盖 → 相似度
+ *   → 本地可接受集合 → 语义复核（异步、可缓存、有超时）
+ *
+ * 语义复核失败/超时时返回 unsure，**绝不默认判错** —— 宁可漏判，不可错判。
+ */
+
+/* v3：词形变体改用"代入式语法判断"专用提示词 —— 旧问法实测会波动
+   （同一用例 8 次采样 7 次对、1 次错），旧缓存里的结论不能重放。 */
+const LS_CACHE = 'lexiloop.judgecache.v3'
+const CACHE_MAX = 400
+const SEMANTIC_TIMEOUT_MS = 6000
+
+/* ─────────────────────────── 归一化 ─────────────────────────── */
+
+/** 归一化作答与答案：忽略大小写、标点、冠词与多余空格 */
+export function normalizeAns(s) {
+  return String(s || '')
+    .toLowerCase()
+    .replace(/[\u2019`\u00b4]/g, "'")
+    .replace(/[^a-z0-9'\s-]/g, ' ')
+    .replace(/\b(a|an|the)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/** 只留字母（用于判断"漏空格"这类纯手误）。保留冠词，否则 "in the stairwell" 里的 the 会被吞掉 */
+function lettersOnly(x) {
+  return String(x == null ? '' : x)
+    .toLowerCase()
+    .replace(/[\u2019`\u00b4]/g, "'")
+    .replace(/[^a-z0-9'-]/g, '')
+}
+
+/** Damerau-Levenshtein：把"相邻两字母写反"算 1 次手误。
+ *  纯 Levenshtein 把它算成 2（wiht → with 要删一个再插一个），
+ *  结果最常见的一类手机手误反而被判错。 */
+function dl(a, b) {
+  const m = a.length
+  const n = b.length
+  if (!m) return n
+  if (!n) return m
+  const d = Array.from({ length: m + 1 }, (_, i) => {
+    const row = new Array(n + 1).fill(0)
+    row[0] = i
+    return row
+  })
+  for (let j = 0; j <= n; j++) d[0][j] = j
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      const cost = a.charAt(i - 1) === b.charAt(j - 1) ? 0 : 1
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost)
+      if (i > 1 && j > 1 && a.charAt(i - 1) === b.charAt(j - 2) && a.charAt(i - 2) === b.charAt(j - 1)) {
+        d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1)
+      }
+    }
+  }
+  return d[m][n]
+}
+
+/* ─────────────────── 词形变化 / 英美拼写 ───────────────────
+   旧实现里有一条"去掉最后一个字母看前缀"的宽松规则，本意是容忍 -ing/-ed，
+   实际会把 great / greasy 这种**语义无关**的词判成同一个（gre 是公共前缀）。
+   同理，按整句相似度 ≥0.85 放行也会让长短语里的一次词替换蒙混过关
+   （great time good vs greasy time good 相似度 0.875）。
+
+   所以改成两条**可证明**的通道，逐词比、任一不满足就整句不通过：
+     ① 词形变化：x 以整个 w 开头，多出来的尾巴在显式后缀白名单里
+     ② 手误：首字母相同 + Damerau 距离 ≤1
+   外加一张显式的英美拼写对照表（可审核、可增补），不再靠正则猜。 */
+
+const SUFFIXES = ['s', 'es', 'ed', 'd', 'ing', 'ly', 'er', 'est', 'ment', 'ness', 'ion', 'ation']
+
+/** w → x 是否只是合法词形变化（x 必须以整个 w 开头，尾巴在允许的后缀里） */
+function morphMatch(w, x) {
+  if (!w || !x || x === w) return false
+  if (x.length <= w.length || x.indexOf(w) !== 0) return false
+  return SUFFIXES.indexOf(x.slice(w.length)) >= 0
+}
+
+/** 显式英美拼写对照表。为什么不用正则：/or/→/our/ 会把 for 变成 four、
+ *  把 here 变成 her —— 判分宽容度不能靠猜，得靠一份能被人审的名单。 */
+const SPELL_PAIRS = [
+  ['colour', 'color'], ['favour', 'favor'], ['honour', 'honor'], ['behaviour', 'behavior'],
+  ['neighbour', 'neighbor'], ['labour', 'labor'], ['humour', 'humor'], ['rumour', 'rumor'],
+  ['centre', 'center'], ['theatre', 'theater'], ['metre', 'meter'], ['litre', 'liter'],
+  ['fibre', 'fiber'], ['calibre', 'caliber'],
+  ['organise', 'organize'], ['realise', 'realize'], ['recognise', 'recognize'],
+  ['analyse', 'analyze'], ['apologise', 'apologize'], ['criticise', 'criticize'],
+  ['travelling', 'traveling'], ['cancelled', 'canceled'], ['labelled', 'labeled'],
+  ['licence', 'license'], ['defence', 'defense'], ['practise', 'practice'],
+  ['grey', 'gray'], ['aluminium', 'aluminum'],
+]
+const SPELL_MAP = (() => {
+  const m = new Map()
+  const suffixes = ['s', 'es', 'd', 'ed', 'ing', 'ment', 'able', 'ful', 'less', 'ly']
+  SPELL_PAIRS.forEach((pair) => {
+    const a = pair[0]
+    const b = pair[1]
+    m.set(a, b)
+    m.set(b, a)
+    suffixes.forEach((s) => { m.set(a + s, b + s); m.set(b + s, a + s) })
+  })
+  return m
+})()
+
+/** 词的英美拼写等价形式（只返回经审核的这一种，不做正则猜测） */
+export function spellingVariants(s) {
+  const v = [s]
+  const hit = SPELL_MAP.get(s)
+  if (hit) v.push(hit)
+  return v
+}
+
+/** 单个词是否是另一个词的"手误"：首字母必须相同 + Damerau 距离 ≤1。
+ *  两个条件都要 —— 只看距离会让 great / greasy（距离 2）以外的词偶尔混进来，
+ *  只看首字母则完全没约束。 */
+function isTypoOf(w, x) {
+  if (w === x) return true
+  if (!w || !x || w.charAt(0) !== x.charAt(0)) return false
+  if (Math.min(w.length, x.length) < 3) return false
+  return dl(w, x) <= 1
+}
+
+/** 词 w 与 x 是否等价（词形变化 / 英美拼写 / 手误三条通道） */
+function wordEquivalent(w, x) {
+  if (w === x) return true
+  if (morphMatch(w, x) || morphMatch(x, w)) return true
+  if (isTypoOf(w, x)) return true
+  const xv = spellingVariants(x)
+  return spellingVariants(w).some((a) => xv.indexOf(a) >= 0)
+}
+
+/** 整短语是否等价：词数必须相同，且每一对词都等价。
+ *  逐对比较（而不是整句比相似度）才能挡住"只换掉一个词"的情况。 */
+function phraseEquivalent(g, e) {
+  const gw = g.split(' ').filter(Boolean)
+  const ew = e.split(' ').filter(Boolean)
+  if (gw.length !== ew.length || !gw.length) return false
+  return ew.every((w, i) => wordEquivalent(w, gw[i]))
+}
+
+/* ─────────────────────────── 本地判定 ─────────────────────────── */
+
+export const HIT = 'hit'
+export const ALT = 'alt'
+export const WRONG = 'wrong'
+export const UNSURE = 'unsure'
+
+/**
+ * 判定打字作答（同步部分，纯本地）。
+ * @param {string} given 用户作答
+ * @param {string} expected 目标表达
+ * @param {{accept?:string[], locked?:boolean}} opts
+ *        accept: 该词条已审核通过的可接受替代表达
+ *        locked: 本题明确要求用目标表达（题面已写明），此时未命中就是未命中，走复核
+ * @returns {{ok:boolean, verdict:string, typo:boolean, loose:boolean, empty:boolean, target:boolean}}
+ */
+export function judgeTyped(given, expected, opts) {
+  const o = opts || {}
+  const miss = (typo, loose) => ({
+    ok: false, verdict: WRONG, typo: !!typo, loose: !!loose, empty: false, target: false,
+  })
+
+  const g = normalizeAns(given)
+  const e = normalizeAns(expected)
+  if (!g) return { ok: false, verdict: WRONG, typo: false, loose: false, empty: true, target: false }
+  if (g === e) return { ok: true, verdict: HIT, typo: false, loose: false, empty: false, target: true }
+
+  // 漏空格/多空格（手机打字最常见的手误）：字母序列完全一致就算过，不该判错
+  const lg = lettersOnly(given)
+  const le = lettersOnly(expected)
+  if (lg && le && lg === le) {
+    return { ok: true, verdict: HIT, typo: true, loose: false, empty: false, target: true }
+  }
+
+  // 词形变化 / 英美拼写 / 手误（逐词严格等价或"距离 1 的手误"才放行）
+  if (phraseEquivalent(g, e)) {
+    // 完全等价（含只有拼写方式不同）按"拼写小错"记，不算干净命中
+    return { ok: true, verdict: HIT, typo: true, loose: false, empty: false, target: true }
+  }
+
+  const ew = e.split(' ').filter(Boolean)
+  const gw = g.split(' ').filter(Boolean)
+
+  // 目标短语的每个词都在作答里（顺序不限）—— 用于"包含但多写"的情况
+  if (ew.length >= 2) {
+    const all = ew.every((w) => gw.some((x) => x === w || morphMatch(w, x)))
+    if (all) return { ok: true, verdict: HIT, typo: false, loose: true, empty: false, target: true }
+  }
+
+  // 词条级可接受集合（经审核的同义表达）
+  const acc = Array.isArray(o.accept) ? o.accept : []
+  for (const a of acc) {
+    const na = normalizeAns(a)
+    if (!na) continue
+    if (g === na || phraseEquivalent(g, na)) {
+      return { ok: true, verdict: ALT, typo: false, loose: false, empty: false, target: false }
+    }
+  }
+
+  return miss(false, false)
+}
+
+/** 作答是否"像一条有意写出的英文短语"—— 决定值不值得花一次语义复核。
+ *  纯乱码、单字母、超长串不送复核，省时间也省额度。 */
+export function looksLikeEnglishPhrase(s) {
+  const t = String(s || '').trim()
+  if (t.length < 3 || t.length > 48) return false
+  if (!/^[A-Za-z][A-Za-z'’\- ]*$/.test(t)) return false
+  const words = t.split(/\s+/).filter(Boolean)
+  if (words.length < 1 || words.length > 5) return false
+  if (words.every((w) => w.length < 2)) return false
+  return true
+}
+
+/* ─────────────────────────── 语义复核 ─────────────────────────── */
+
+let cache = null
+
+function loadCache() {
+  if (cache) return cache
+  cache = {}
+  try {
+    const raw = localStorage.getItem(LS_CACHE)
+    const o = raw ? JSON.parse(raw) : null
+    if (o && typeof o === 'object') cache = o
+  } catch (e) { cache = {} }
+  return cache
+}
+
+function saveCache() {
+  try {
+    const keys = Object.keys(cache)
+    if (keys.length > CACHE_MAX) {
+      // 只留最近写入的一半，避免 localStorage 无限膨胀
+      keys.sort((a, b) => (cache[b].t || 0) - (cache[a].t || 0))
+      const keep = {}
+      keys.slice(0, Math.floor(CACHE_MAX / 2)).forEach((k) => { keep[k] = cache[k] })
+      cache = keep
+    }
+    localStorage.setItem(LS_CACHE, JSON.stringify(cache))
+  } catch (e) { /* 超配额就算了，缓存不是关键路径 */ }
+}
+
+function cacheKey(expected, given) {
+  return normalizeAns(expected) + '||' + normalizeAns(given)
+}
+
+/** 读取已缓存的复核结论（不发请求）。用于渲染时立刻拿到上次的判定 */
+export function cachedVerdict(expected, given) {
+  const c = loadCache()[cacheKey(expected, given)]
+  return c && c.v ? c.v : null
+}
+
+const SYS_PROMPT =
+  '你是英语判分助手。用户在做"用指定搭配完成句子"的填空练习。\n' +
+  '判断用户填写的表达**在这个句子的语境里**是否是成立的英语。\n' +
+  '只输出 JSON，不要解释：{"verdict":"alt"或"wrong"}\n' +
+  'alt = 语法正确、意思贴切、母语者会这么说（即使和目标搭配不同）\n' +
+  'wrong = 语法错误、词性错误、意思与该语境不符、或根本不成词\n' +
+  '注意：不要因为"和目标搭配不一样"就判 wrong。只评判英语本身在语境里成不成立。\n' +
+  '词形变化（时态/单复数/语态）**不是**错误：把用户的词填进空缺读一遍，语法成立、意思不变就判 alt。\n' +
+  '特别注意：例文用什么形式不影响判定 —— "She ___ him on his skills" 填 compliments 或 complimented 都成立（无时间词，不锁定时态）；\n' +
+  '只有语法不成立才判 wrong，例如 "She ___ him yesterday" 填 compliments。'
+
+function reviewPrompt(o) {
+  return (o.sentence
+    ? '句子（下划线是空缺）：' + o.sentence + '\n'
+    : '本题没有上下文句子，只是给出中文意思要用户说出对应表达。\n') +
+    (o.zh ? '要表达的意思：' + o.zh + '\n' : '') +
+    '本题目标表达：' + o.expected + '\n' +
+    '用户填写：' + o.given + '\n' +
+    '请判断用户填写的表达是否成立。'
+}
+
+/* ── 词形变体（同一词的不同时态/单复数）专用问法 ──
+   为什么单开一条：让模型在"目标词形 vs 用户词形"之间权衡，问法本身有歧义 ——
+   2026-10-14 实测同一段提示词 8 次采样里 7 次 alt、1 次 wrong（线上套件恰好抓到那次）。
+   改成把用户填的词**代入空缺**、只问"整句是否成立"后：关键用例 8/8、反例（yesterday /
+   光杆形式）4/4、对照组（address / deal in）2/2 全部稳定。 */
+const SYS_FORM_PROMPT =
+  '你是英语语法检查器。用户做填空题时把一个词填进了句子的空缺处。\n' +
+  '判断这个词填进去后，整句是否是**正确、地道的英语**。\n' +
+  '只输出 JSON，不要解释：{"verdict":"alt"或"wrong"}\n' +
+  'alt = 句子语法正确、地道 —— 不要因为"和参考答案/例文的词形不同"就判 wrong\n' +
+  'wrong = 语法不成立（例如与句中时间词冲突、主谓不一致、搭配不成立）或意思不通'
+
+/** 两个单 token 是否"同一个词的不同词形"（complimented / compliments）。
+ *  只处理单词：短语的不规则屈折（deal→dealt）判不了，硬判会误伤。 */
+function sameStemForm(a, b) {
+  const stem = (w) => String(w || '').toLowerCase()
+    .replace(/(ies|ied)$/, 'y')
+    .replace(/(ing|ed|es|s)$/, '')
+    .replace(/e$/, '')
+  const x = normalizeAns(a)
+  const y = normalizeAns(b)
+  if (!x || !y || x === y) return false
+  if (/\s/.test(x) || /\s/.test(y)) return false
+  if (Math.min(x.length, y.length) < 4) return false
+  return stem(x) === stem(y)
+}
+
+/** 能不能走"代入式语法判断"：句子里有空缺（挖空版）＋ 作答就是该词的另一种词形 */
+function useFormMode(o) {
+  return /_{3,}/.test(String(o.sentence || '')) && sameStemForm(o.expected, o.given)
+}
+
+function formReviewPrompt(o) {
+  const filled = String(o.sentence || '').replace(/_{3,}/, String(o.given))
+  return '填好后的句子：' + filled + '\n' +
+    (o.zh ? '句子要表达的意思：' + o.zh + '\n' : '') +
+    '用户填的词：' + o.given + '\n' +
+    '请判断这句话是否成立。'
+}
+
+/**
+ * 语义复核：把"未命中目标但可能是合理替代"的作答交给大模型判一次。
+ * 全部失败路径都返回 null（= 无法判定），**绝不返回 wrong**：
+ * 判分不确定时宁可记"待复核"，也不能冤枉用户。
+ * @param {{sentence:string, zh?:string, expected:string, given:string, chat:Function, model?:string}} o
+ *        chat: 注入的 LLM 调用函数 ({system,user,json,temperature,maxTokens,signal}) => Promise<string>
+ * @returns {Promise<{verdict:'alt'|'wrong'|null, cached:boolean}>}
+ */
+export async function reviewSemantics(o) {
+  if (!o || !o.chat || !o.expected || !o.given) return { verdict: null, cached: false }
+
+  const key = cacheKey(o.expected, o.given)
+  const hit = loadCache()[key]
+  if (hit && hit.v) return { verdict: hit.v, cached: true }
+
+  const formMode = useFormMode(o)
+
+  let timer = null
+  const guard = new Promise((resolve) => {
+    timer = setTimeout(() => resolve('__timeout__'), SEMANTIC_TIMEOUT_MS)
+  })
+
+  try {
+    const raw = await Promise.race([
+      o.chat({
+        system: formMode ? SYS_FORM_PROMPT : SYS_PROMPT,
+        user: formMode ? formReviewPrompt(o) : reviewPrompt(o),
+        json: true,
+        temperature: 0,
+        maxTokens: 60,
+        model: o.model,
+      }),
+      guard,
+    ])
+    if (timer) clearTimeout(timer)
+    if (typeof raw !== 'string' || !raw) return { verdict: null, cached: false }
+
+    let v = ''
+    try {
+      const j = JSON.parse(raw)
+      v = String((j && j.verdict) || '').toLowerCase()
+    } catch (e) {
+      // 模型偶尔会裹一层 ```json，宽松兜一下
+      const m = raw.match(/"verdict"\s*:\s*"(alt|wrong)"/i)
+      v = m ? m[1].toLowerCase() : ''
+    }
+    if (v !== 'alt' && v !== 'wrong') return { verdict: null, cached: false }
+
+    loadCache()[key] = { v: v, t: Date.now() }
+    saveCache()
+    return { verdict: v, cached: false }
+  } catch (e) {
+    return { verdict: null, cached: false }
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
+/** 供测试与"清缓存"用。
+ *  必须把 cache 置回 null 而不是 {}：loadCache() 只在 cache 为 null 时去读
+ *  localStorage，置成空对象会让它永远停在内存里 —— 清了缓存反而读不到之后写进去的内容。 */
+export function clearJudgeCache() {
+  cache = null
+  try { localStorage.removeItem(LS_CACHE) } catch (e) { /* ignore */ }
+}
+
+/** 仅供自动化测试：直接种一条判定结论进缓存。
+ *  为什么要这个钩子：测试不该硬编码缓存键名 —— 缓存版本一升（v1→v2），
+ *  直接写 localStorage 的测试就会静默失效（键名从不匹配）。产品代码不得调用。 */
+export function __seedJudgeCache(expected, given, verdict) {
+  loadCache()[cacheKey(expected, given)] = { v: verdict, t: Date.now() }
+  saveCache()
+}
+
+/** 仅供自动化测试：读出真实提示词与问法判定。
+ *  探针脚本必须用**这里**的文本发请求，不能自己复制一份 ——
+ *  复制件会与产品漂移，出现"探针全绿、线上照旧"的假信心。产品代码不得调用。 */
+export function __prompts() {
+  return {
+    general: SYS_PROMPT,
+    form: SYS_FORM_PROMPT,
+    formMode: useFormMode,
+    generalPrompt: reviewPrompt,
+    formPrompt: formReviewPrompt,
+  }
+}
