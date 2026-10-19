@@ -2,8 +2,13 @@
 
 ## 当前状态
 
-GitHub 自动离线检查和发布包已配置。WorkBuddy 的外部发布连接尚未验证；
-工作流不会假装上线，不会发送请求到猜测的部署 API，也不会迁移数据库。
+GitHub 自动离线检查和发布包已配置并已在 GitHub Actions 成功运行。
+根据用户于 2026-10-19 转回的原 WorkBuddy 项目核查报告，当前项目只能在 WorkBuddy
+会话内使用 `workbuddy_sites_deploy` 更新发布，并要求用户在发布当轮明确说“发布”。
+该报告称未提供 GitHub 自动部署、外部发布 API/CLI 或部署 webhook；本仓库维护端
+未直接检查其本机工具或技能，不把这项报告泛化为所有 WorkBuddy 版本的永久结论。
+当前采用 GitHub 自动检查与打包、WorkBuddy 手动授权发布的流程。
+没有自动部署 job，也不会迁移数据库。
 现有正式站点：<https://lexiloop-82703.app.workbuddy.host/>。
 
 ## 检查和固定发布来源
@@ -12,8 +17,10 @@ GitHub 自动离线检查和发布包已配置。WorkBuddy 的外部发布连接
 2. 提交 PR，确认 `LexiLoop checks and release bundle / check` 成功。
 3. 审核后合并到 main；等待 main 的检查成功。
 4. 从该次 main 检查下载 `lexiloop-FULL_SHA` artifact，保存 ZIP 和 SHA-256 文件。
-5. 发布 ZIP 内的文件到**现有应用**；根目录应为 index.html，不再套 lexiloop 子目录。
-   不发布 server.py、tools、报告、环境文件或仓库根目录。
+5. WorkBuddy 先读取并核对发布说明，准备 ZIP 中的文件，保留原应用绑定配置。
+   收到用户在当轮明确的“发布”指令后，使用原 `lexiloop/` 对应的应用目录更新现有应用；
+   不另建临时应用，不以其他目录猜测目标。ZIP 解压后不再套 lexiloop 子目录。
+   发布资源中不含 server.py、tools、报告、环境文件或仓库根目录。
 6. 保留上一份已验收的 ZIP、摘要和 SHA，以便静态代码回滚。
 
 GitHub PR 的发布包标记 PR 源提交，合并后的发布包标记 main 提交；实际部署 main 的包。
@@ -55,21 +62,43 @@ WorkBuddy 的发布缓存刷新与多文件原子性需要先验证；若平台�
 必须记录短暂混用资源风险。Service Worker 可能需要用户点“检查更新”后才接管。
 静态代码回滚不回滚数据库，本流程禁止执行数据库写入和结构迁移。
 
-## 发布连接待办（在原 WorkBuddy 项目执行）
+## WorkBuddy 读取私有仓库
 
-请让 WorkBuddy 查明以下内容，并将**不含秘密**的结果提交到独立分支：
+匿名网页返回 404 不能判断仓库不存在。没有 gh CLI 登录态也不能判断 Git 未授权：
+Git Credential Manager、gh、GitHub 连接器与浏览器各有自己的访问路径。
+先在之前成功同步的同一 Windows 用户和原项目环境验证 Git：
 
-- 现有应用的实际更新发布工具或官方 CLI 名称、参数结构、官方文档；
-  既有应用标识为 wbapp_3mGfJgXC5sdFj1a25a9NhF，不能另建应用或更换数据源。
-- 是否支持 GitHub 原生自动部署、外部 CI 官方 API、短期凭据或部署 webhook；
-  所需权限、授权入口、凭据续期方式及域名，不返回令牌值或带密钥的 webhook URL。
-- 若支持，把最小必要凭据直接配置到 GitHub 的 production 环境秘密中，
-  不写源码、报告或聊天。GitHub 写仓库权限不等于 WorkBuddy 发布权限。
-- 发布目录、更新同一 URL 的方法、缓存刷新、原子发布、历史版本回滚能力。
-- 若只能在本机 WorkBuddy 已登录会话内发布，明确说明此限制，不将其称为云端自动部署。
+```bash
+git ls-remote https://github.com/issac-js/lexiloop.git refs/heads/sync/full-source-20261019
+```
 
-确认受支持的连接后，才能编写实际 deploy job、进行一次真实发布并运行上述验收。
-暂不安装本机 self-hosted runner；不能让普通 PR 在用户电脑上执行任意代码。
+如果成功，在**已核对 origin 地址的原仓库**读取分支文档，无需切换工作区：
+
+```bash
+git fetch origin sync/full-source-20261019
+git show FETCH_HEAD:docs/DEPLOYMENT.md
+```
+
+这不合并 main，也不覆盖本地文件。如果认证失败，使用现有 Git Credential Manager
+官方浏览器授权，或给 WorkBuddy 的 GitHub 连接器授权该私有仓库；只读连接足以审阅。
+不输出保存的凭据，不复制其他进程的凭据，不以匿名 URL 反复判断私有仓库状态。
+
+## 已报告的发布约束与待验事项
+
+原 WorkBuddy 项目报告：
+- 更新工具为会话内 workbuddy_sites_deploy，用户必须当轮明确授权“发布”；
+- 原绑定在 .wbapp_3mGfJgXC5sdFj1a25a9NhF.genie 和 .workbuddy/applications.yaml；
+- 原上传目录 lexiloop/；应用 ID、正式 URL、云服务与用户须保持原样；
+- 未发现可配置的外部部署入口，因此目前无需创建 GitHub 部署秘密。
+
+这些本机绑定文件不提交到 GitHub。不得以打通自动部署为由绕过会话发布要求。
+GitHub 端可检查、修复、提交 PR 和打包；WorkBuddy 端负责接收指定提交的发布包、
+准备原应用目录，等待当轮发布授权后更新正式站点，再返回提交 SHA、URL 和验收结果。
+暂不配置定时任务、本机 runner 或额外 OAuth 应用。
+
+仍需首次授权发布来验证：release.json 是否被托管、22 个资源是否一致、
+缓存刷新、多文件整体切换、浏览器 Service Worker 更新及静态回滚方式。
+源代码审阅、离线 CI 和资源哈希不能替代登录、同步、模型与数据权限实测。
 
 ## 参考
 

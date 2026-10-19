@@ -233,7 +233,8 @@ python -B tools/release_bundle.py --sha FULL_SHA
 
 应用改动的版本号应在 PR 中更新，合并后不要再产生未经检查的发布修改。
 只发布 `dist/lexiloop-FULL_SHA.zip` 的解压内容；其中 `release.json` 标记来源提交和资源摘要。
-目前 GitHub 自动检查及打包与 WorkBuddy 实际上线是两个环节；外部发布连接待验证。
+目前 GitHub 自动检查及打包与 WorkBuddy 实际上线是两个环节。根据原 WorkBuddy 项目
+核查报告，发布须在 WorkBuddy 会话内由用户当轮明确授权；目前没有配置外部自动部署。
 完整流程及线上只读验收命令见 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)。
 
 ---
