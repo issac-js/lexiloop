@@ -10,7 +10,7 @@
 | 组件 | 开发用版本 | 最低要求 | 用途 |
 | --- | --- | --- | --- |
 | Python | 3.13.12 | 3.11 | 静态服务器、测试与运维脚本 |
-| Node.js | 22.22.2 | 20 | 跑 JS 单元测试（`tools/lexiloop-tests`） |
+| Node.js | 22.22.2 | 20 | 离线检查（`python -B tools/ci_check.py`） |
 | 浏览器 | Microsoft Edge（Chromium 内核） | Edge / Chrome 最新版 | 语音跟读需 Web Speech API |
 
 **Python 第三方包**（仅测试脚本用，应用本体不需要）：
@@ -122,3 +122,11 @@ playwright install msedge
 - 所有 `from './xxx.js?v=N'` 的 N 必须**同步递增**（含 `index.html` 里的 `app.js`，以及 `sw.js` 的 `CACHE` 名）。
 - 原因：CDN 按完整 URL 缓存，`cache: 'no-store'` 也绕不过边缘缓存。
 - 当前版本：**v108**（13 个 JS 模块）
+
+
+## 7. 云端检查与发布边界
+
+默认 CI 只需 Python 3.12 + Node 22，不安装 Playwright，不运行历史在线脚本。
+历史工具另有浏览器、第三方 Python 包、Windows 路径及测试数据要求；执行前逐一核对。
+部署只使用 `tools/release_bundle.py` 生成的白名单静态资源包；详见
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)。

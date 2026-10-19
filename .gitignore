@@ -37,6 +37,7 @@ build/
 backup/
 import/
 *.sql
+!db/migrations/*.sql
 *.sqlite
 *.sqlite3
 *.db
@@ -55,3 +56,4 @@ _debug_*.js
 .DS_Store
 Thumbs.db
 desktop.ini
+

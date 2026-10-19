@@ -110,24 +110,14 @@ $env:PORT='8123'; python server.py
 不加版本号，用户会拿到旧模块，产生「新代码调用旧导出」这类难查的报错。
 `sw.js` 里的 `CACHE` 名（`lexiloop-shell-vN`）同步改。
 
-一键升版本（在仓库根目录执行，把 `ver` 改成新版本号）：
+统一升版本（在仓库根目录执行；先确认新版本号未使用）：
 
 ```bash
-python - <<'PY'
-import re, pathlib
-d = pathlib.Path('lexiloop'); ver = 109   # ← 改成新版本号
-pat = re.compile(r"(from\s+')(\./[^']+\.js)(?:\?v=\d+)?(')")
-for f in sorted((d/'js').glob('*.js')):
-    s = f.read_text(encoding='utf-8')
-    s2, c = pat.subn(lambda m: m.group(1)+m.group(2)+'?v='+str(ver)+m.group(3), s)
-    if c: f.write_text(s2, encoding='utf-8')
-idx = d/'index.html'; s = idx.read_text(encoding='utf-8')
-idx.write_text(re.sub(r'(src="js/app\.js)(\?v=\d+)?(")', r'\1?v='+str(ver)+r'\3', s), encoding='utf-8')
-sw = d/'sw.js'; s = sw.read_text(encoding='utf-8')
-sw.write_text(re.sub(r"lexiloop-shell-v\d+", 'lexiloop-shell-v%d' % ver, s), encoding='utf-8')
-print('v%d' % ver)
-PY
+python tools/bump_version.py 109 --root lexiloop
+python -B tools/ci_check.py
 ```
+
+脚本会统一更新模块、入口、CSS、manifest 和 Service Worker 缓存版本。
 
 > 当前代码版本：**v108**（已发布）
 
@@ -135,36 +125,23 @@ PY
 
 ## 5. 测试
 
-### 5.1 语法检查（无需网络，随时可跑）
+### 5.1 自动离线检查（默认）
 
 ```bash
-# 全部 13 个 ES Module 逐个过 node --check
-cd lexiloop/js
-for f in *.js; do cp "$f" "/tmp/check-$f.mjs" && node --check "/tmp/check-$f.mjs" && rm "/tmp/check-$f.mjs" || echo "FAIL: $f"; done
+python -B tools/ci_check.py
 ```
 
-### 5.2 本地冒烟（起服务后所有资源应返回 200）
+检查全部 JS/Python 语法、模块引用、资源版本、manifest、现有 FSRS 断言和
+22 个公开静态资源。无需账号，不访问云数据库或调用模型。
+GitHub Actions 对 PR、main 及同步分支自动运行；通过后生成绑定提交 SHA 的发布包。
 
-```bash
-cd lexiloop && python server.py &
-for p in / index.html styles.css sw.js manifest.webmanifest icon.svg \
-         vendor/workbuddy-cloud-sdk.js js/app.js js/store.js js/cloud.js; do
-  code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:3000/$p")
-  echo "$code $p"
-done
-```
+### 5.2 历史端到端与运维脚本（按需）
 
-### 5.3 端到端（需要 Playwright + Edge，且要联网）
-
-```bash
-cd tools
-python e2e9.py            # 全维度功能验证
-python e2e10.py           # leech 改写（真实 LLM）+ docx 导入
-python qa-ios.py          # iOS 适配检查
-```
-
-端到端脚本里的账号是**测试账号**，不是所有者账号；测试账号数据稀疏，
-某些断言（关卡数、配对组数）会因此降级，属预期。
+`tools/e2e9.py`、`tools/e2e10.py`、`tools/qa_ios.py` 等是历史脚本，
+部分硬编码旧站 `lexiloop-16105`、Windows Edge 路径、测试数据或输出路径。
+**不要把它们当成可直接运行的云端验收命令。** 先核对目标、数据写入与依赖，
+再在隔离测试环境运行。需要测试账号时通过环境变量提供
+`LEXILOOP_TEST_EMAIL` / `LEXILOOP_TEST_PASSWORD`，不用生产账号。
 
 ---
 
@@ -173,8 +150,10 @@ python qa-ios.py          # iOS 适配检查
 | 变量 | 用于 | 默认 | 说明 |
 | --- | --- | --- | --- |
 | `PORT` | `server.py` | `3000` | 静态服务器监听端口 |
+| `LEXILOOP_TEST_EMAIL` | 部分历史测试脚本 | 空 | 隔离测试账号邮箱 |
+| `LEXILOOP_TEST_PASSWORD` | 部分历史测试脚本 | 空 | 隔离测试账号密码 |
 
-参考 `.env.example`。本应用**不需要任何密钥类环境变量**：
+参考 `.env.example`；脚本不会自动读取 `.env`，需要在运行环境中显式设置变量。本应用**不需要任何密钥类环境变量**：
 云服务前端配置在 `lexiloop/js/config.js`（发布键，设计上公开）；
 「自带 LLM API Key」只存用户浏览器 localStorage，不进仓库、不过服务端。
 
@@ -203,12 +182,16 @@ python qa-ios.py          # iOS 适配检查
    需要动态端口时用 `python server.py` 起服务（它存在的唯一理由是绕过 CDN 边缘缓存，
    强制回源）。
 
+其他域名必须先获得原云服务的 Origin/CORS 允许，并验证登录、同步和 AI。
+静态页面可打开不代表云服务可用。发布键是公开客户端配置，不能替代用户授权或行级权限。
+发布链路、版本核验及回滚详见 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)。
+
 ---
 
 ## 9. 安全约定（提交前必读）
 
-- **本仓库不含任何密钥**。`js/config.js` 里的 `publishableKey`（`wbpk_ 前缀`）是
-  设计上公开的前端发布键，只标识应用、不含权限（服务端按 Origin 校验），可安全提交。
+- 不得提交长期密钥。`js/config.js` 中的 `publishableKey` 是公开客户端配置；
+  其存在不证明服务端的用户鉴权、数据隔离或 Origin 策略已验证。
 - **生产数据与用户数据不入库**：`.gitignore` 排除 `backup/`、`import/`、`*.sql`、
   截图与测试输出 JSON。历史迁移 SQL 因含生产内容被排除，策略见 `db/migrations/README.md`。
 - 发现误提交的敏感内容：先轮换凭据，再清历史（`git filter-repo`），不要只是删文件了事。
@@ -236,39 +219,26 @@ python qa-ios.py          # iOS 适配检查
 
 ## 11. 从 GitHub 拉取更新并重新部署
 
+以 GitHub 审核合并后的提交作为代码依据。部署前先确认工作区干净，禁止以本地
+未提交文件覆盖远端代码。使用独立干净 checkout 可以保留原工作副本中的改动。
+
 ```bash
-# 1. 拉取远端更新（保留本地未提交改动）
+git status --short
+git switch main
 git pull --ff-only origin main
-
-# 2. 有冲突时：本地工作副本是部署真源，先提交或 stash 再合
-git status
-
-# 3. 按 §4 升版本号（改了什么都要升，哪怕只改一行 CSS）
-python - <<'PY'
-import re, pathlib
-d = pathlib.Path('lexiloop'); ver = 109
-pat = re.compile(r"(from\s+')(\./[^']+\.js)(?:\?v=\d+)?(')")
-for f in sorted((d/'js').glob('*.js')):
-    s = f.read_text(encoding='utf-8')
-    s2, c = pat.subn(lambda m: m.group(1)+m.group(2)+'?v='+str(ver)+m.group(3), s)
-    if c: f.write_text(s2, encoding='utf-8')
-idx = d/'index.html'; s = idx.read_text(encoding='utf-8')
-idx.write_text(re.sub(r'(src="js/app\.js)(\?v=\d+)?(")', r'\1?v='+str(ver)+r'\3', s), encoding='utf-8')
-sw = d/'sw.js'; s = sw.read_text(encoding='utf-8')
-sw.write_text(re.sub(r"lexiloop-shell-v\d+", 'lexiloop-shell-v%d' % ver, s), encoding='utf-8')
-print('v%d' % ver)
-PY
-
-# 4. 提交并推送
-git add -A && git commit -m "release: v109"
-git push origin main
-
-# 5. 重新部署：把 lexiloop/ 目录重新发布到云托管（或 rsync 到自有静态服务器），
-#    然后硬刷新一次线上页面确认新版本号生效
+python -B tools/ci_check.py
+# FULL_SHA 替换为当前干净 checkout 的完整 git rev-parse HEAD 结果
+python -B tools/release_bundle.py --sha FULL_SHA
 ```
+
+应用改动的版本号应在 PR 中更新，合并后不要再产生未经检查的发布修改。
+只发布 `dist/lexiloop-FULL_SHA.zip` 的解压内容；其中 `release.json` 标记来源提交和资源摘要。
+目前 GitHub 自动检查及打包与 WorkBuddy 实际上线是两个环节；外部发布连接待验证。
+完整流程及线上只读验收命令见 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)。
 
 ---
 
 ## 12. 许可与边界
 
 个人自用项目。语料来自个人工作积累；释义与搭配由模型生成，**仅供学习参考，请以权威词典为准**。
+
