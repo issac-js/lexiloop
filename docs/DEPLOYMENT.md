@@ -69,10 +69,21 @@ python -B tools/verify_deployed.py \
 未测试时应标记待验证，不能写“功能风险为零”。首次发布证据与未测项见
 [2026-10-19 v108 发布记录](releases/2026-10-19-v108.md)。
 
-WorkBuddy 本地新增的 `qa-release-live.js`、`qa-words-read-live.js`、
-`qa-release-shot.js` 尚未推送到 GitHub；不能作为本仓库已经提供的命令引用。
-先由原项目推送源码到独立分支，再核查凭据、站点目标、写入路径和实际依赖，
-之后才能纳入可复现的验收入口。
+WorkBuddy 原始验收脚本已从提交 `8267ce11ba6b6c55d0f8a24d56f8f0195032f2d3`
+导入并修正。使用方法及权限边界见 [线上验收工具说明](../tools/README-live-checks.md)：
+
+```bash
+node tools/qa-release-live.js
+node tools/qa-words-read-live.js
+node tools/qa-release-shot.js
+```
+
+运行前必须配置专用 QA profile、既有隔离账号邮箱、浏览器路径和期望 SHA/版本。
+默认不发送验证码、不注册账号、不执行模型调用；仅在明确允许时使用已有账号密码登录。
+模型检查另行显式开启，可能消耗额度。脚本在导航前拦截意外写请求，检测到即失败；
+不以“只读”概括登录、模型和本机截图的副作用。该防护与真实浏览器流程仍需现场复测。
+CI 仅运行 `node --test tools/live-checks.test.js` 的离线模拟，不跑生产验收。
+结果分为 pass / partial / fail，skip 不计通过；退出码 1/2 表示失败/配置错误。
 
 ## 回滚
 
