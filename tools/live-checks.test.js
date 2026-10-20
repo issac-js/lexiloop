@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { CDP, requestPolicy, prepareProfile, prepare, summaryStatus } = require('./lib/live-checks.js');
+const { CDP, requestPolicy, startupAction, requestGuard, prepareProfile, prepare, summaryStatus } = require('./lib/live-checks.js');
 const { validateState } = require('./qa-release-live.js');
 const { validateRead } = require('./qa-words-read-live.js');
 
@@ -43,6 +43,120 @@ test('network guard blocks writes/RPC, registration, OTP, cross-origin login and
   assert.equal(request('POST', '/.cloud/llm/chat/completions'), true);
   assert.equal(request('POST', '/.cloud/llm/chat/completions'), false);
   assert.equal(requestPolicy({ ...cfg, allowLogin: false })({ method: 'POST', url: cfg.site + '.cloud/auth/v1/signin' }), false);
+});
+
+test('only exact no-argument study_stats is rewritten; settings writes get an error, never success', async () => {
+  const cfg = { site: 'https://example.invalid/' };
+  const allowed = requestPolicy(cfg);
+  const stats = { method: 'POST', url: cfg.site + '.cloud/database/rest/rpc/study_stats', postData: '{}',
+    headers: { Authorization: 'fixture', 'Content-Type': 'application/json', 'Content-Length': '2' } };
+  assert.equal(startupAction(cfg, stats, allowed), 'read-rpc');
+  for (const postData of ['[]', 'null', '{"owner_id":"other"}', '{bad']) {
+    assert.equal(startupAction(cfg, { ...stats, postData }, allowed), 'block');
+  }
+  assert.equal(startupAction(cfg, { ...stats, hasPostData: true, postData: undefined }, allowed), 'block');
+  assert.equal(startupAction(cfg, { ...stats, url: stats.url + '?owner_id=other' }, allowed), 'block');
+  assert.equal(startupAction(cfg, { ...stats, url: stats.url.replace('example.invalid', 'other.invalid') }, allowed), 'block');
+  assert.equal(startupAction(cfg, { ...stats, url: stats.url.replace('study_stats', 'record_review') }, allowed), 'block');
+  assert.equal(allowed({ ...stats, method: 'GET' }), true);
+  const settings = { method: 'POST', url: cfg.site + '.cloud/database/rest/settings?on_conflict=owner_id',
+    postData: JSON.stringify({ daily_new: 8, daily_max_review: 300, target_retention: 0.9,
+      extra: { day_plan: { date: '2026-10-20', due: 0, newGoal: 0 } } }) };
+  assert.equal(startupAction(cfg, settings, allowed), 'suppress-settings');
+  assert.equal(startupAction(cfg, { ...settings, postData: '{"extra":{}}' }, allowed), 'block');
+  assert.equal(startupAction(cfg, { ...settings, method: 'PATCH' }, allowed), 'block');
+  const calls = [], audit = { blocked: 0, guardErrors: 0, readRpc: 0, suppressedSettings: 0 };
+  const guard = requestGuard(cfg, { send: async (method, params) => calls.push({ method, params }) }, audit);
+  guard.handle({ method: 'Fetch.requestPaused', params: { requestId: 'stats', request: stats } });
+  guard.handle({ method: 'Fetch.requestPaused', params: { requestId: 'settings', request: settings } });
+  await guard.drain();
+  assert.equal(calls[0].method, 'Fetch.continueRequest');
+  assert.equal(calls[0].params.method, 'GET');
+  assert.equal(calls[0].params.postData, '');
+  assert.deepEqual(calls[0].params.headers, [{ name: 'Authorization', value: 'fixture' }]);
+  assert.equal(calls[1].method, 'Fetch.fulfillRequest');
+  assert.equal(calls[1].params.responseCode, 403);
+  assert.equal(JSON.parse(Buffer.from(calls[1].params.body, 'base64')).code, 'QA_WRITE_SUPPRESSED');
+  assert.deepEqual(audit, { blocked: 0, guardErrors: 0, readRpc: 1, suppressedSettings: 1 });
+  guard.handle({ method: 'Network.responseReceived', params: { response: { url: stats.url, status: 405, headers: { private: 'not exported' } } } });
+  assert.deepEqual(audit.statsHttpStatuses, [405]);
+  assert.ok(!JSON.stringify(audit).includes('not exported'));
+});
+
+test('actual v108 syncPull handles rollover without a settings POST and reads statistics via GET', async () => {
+  const { pathToFileURL } = require('node:url');
+  for (const rejectGet of [false, true]) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lexiloop-startup-test-'));
+    const previousFixture = globalThis.__lexiloopStartup;
+    const previousStorage = globalThis.localStorage;
+    try {
+      fs.writeFileSync(path.join(dir, 'package.json'), '{"type":"module"}');
+      for (const name of ['store.js', 'config.js', 'fsrs.js']) {
+        fs.copyFileSync(path.join(__dirname, '../lexiloop/js', name), path.join(dir, name));
+      }
+      fs.writeFileSync(path.join(dir, 'cloud.js'), 'export function db(){return globalThis.__lexiloopStartup.db;} export async function getSession(){return null;}');
+      globalThis.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
+      const cfg = { site: 'https://example.invalid/' };
+      const audit = { blocked: 0, guardErrors: 0, readRpc: 0, suppressedSettings: 0 };
+      const requests = new Map(), forwarded = [];
+      const guard = requestGuard(cfg, { send: async (method, params) => {
+        const pending = requests.get(params.requestId);
+        if (method === 'Fetch.fulfillRequest') {
+          pending.resolve({ data: null, error: JSON.parse(Buffer.from(params.body, 'base64')) });
+        } else if (method === 'Fetch.failRequest') pending.resolve({ data: null, error: Error('blocked') });
+        else {
+          const request = { ...pending.request, method: params.method || pending.request.method };
+          forwarded.push(request);
+          assert.equal(request.method, 'GET', 'no non-read startup request reaches the fixture server');
+          pending.resolve(rejectGet ? { data: null, error: Error('GET RPC unsupported') } : { data: [], error: null });
+        }
+      } }, audit);
+      const transport = (request) => new Promise((resolve) => {
+        const id = String(requests.size + 1); requests.set(id, { request, resolve });
+        guard.handle({ method: 'Fetch.requestPaused', params: { requestId: id, request } });
+      });
+      const settings = { daily_new: 8, daily_max_review: 300, target_retention: 0.9,
+        extra: { day_plan: { date: '2000-01-01', due: 0, newGoal: 0 } } };
+      const db = {
+        rpc: (name) => transport({ method: 'POST', url: cfg.site + '.cloud/database/rest/rpc/' + name, postData: '{}' }),
+        from: (table) => {
+          let row, operation = 'read';
+          const builder = {
+            select() { return this; }, range() { return this; }, order() { return this; }, limit() { return this; },
+            upsert(value) { row = value; operation = 'write'; return this; },
+            maybeSingle: async () => ({ data: table === 'settings' ? settings : null, error: null }),
+            then(resolve, reject) {
+              const result = operation === 'write'
+                ? transport({ method: 'POST', url: cfg.site + '.cloud/database/rest/' + table + '?on_conflict=owner_id', postData: JSON.stringify(row) })
+                : Promise.resolve({ data: [], error: null });
+              return result.then(resolve, reject);
+            },
+          };
+          return builder;
+        },
+      };
+      globalThis.__lexiloopStartup = { db };
+      const S = await import(pathToFileURL(path.join(dir, 'store.js')).href);
+      S.state.user = { id: 'qa-fixture' };
+      if (rejectGet) {
+        await assert.rejects(S.syncPull(), /GET RPC unsupported/);
+        assert.equal(S.state.load.phase, 'error');
+      } else {
+        await S.syncPull();
+        assert.equal(S.state.load.phase, 'ready');
+        assert.notEqual(S.state.settings.day_plan.date, '2000-01-01');
+      }
+      await guard.drain();
+      assert.equal(audit.suppressedSettings, 1);
+      assert.equal(audit.readRpc, 1);
+      assert.equal(audit.blocked, 0);
+      assert.equal(forwarded.length, 1);
+      assert.equal(forwarded[0].method, 'GET'); // No fallback even when the GET was rejected.
+    } finally {
+      globalThis.__lexiloopStartup = previousFixture; globalThis.localStorage = previousStorage;
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
 });
 
 test('a normal profile, different identity, and concurrent QA run are refused', () => {
@@ -103,7 +217,7 @@ test('prepare rejects wrong source and wrong server identity before running any 
 test('actual runner exits 1 for failed assertions, interrupted tasks and blocked requests', () => {
   const out = fs.mkdtempSync(path.join(os.tmpdir(), 'lexiloop-qa-result-test-'));
   try {
-    for (const scenario of ['assertion', 'exception', 'blocked', 'pass', 'skip']) {
+    for (const scenario of ['assertion', 'exception', 'blocked', 'pass', 'skip', 'suppressed']) {
       const program = `
         const {run}=require(${JSON.stringify(path.join(__dirname, 'lib/live-checks.js'))});
         const cfg={sha:'a'.repeat(40),ver:'108',email:'qa@example.invalid',out:${JSON.stringify(out)}};
@@ -113,12 +227,12 @@ test('actual runner exits 1 for failed assertions, interrupted tasks and blocked
           if(${JSON.stringify(scenario)}==='skip')skip('fixture','not exercised');
           else add('fixture',${JSON.stringify(scenario)}!=='assertion');
         },{loadConfig:()=>cfg,launch:async()=>({cdp:{eval:async()=>responses.shift()},
-          audit:{blocked:${scenario === 'blocked' ? 1 : 0},guardErrors:0},close:async()=>{}})});
+          audit:{blocked:${scenario === 'blocked' ? 1 : 0},guardErrors:0,suppressedSettings:${scenario === 'suppressed' ? 1 : 0}},close:async()=>{}})});
       `;
       const child = spawnSync(process.execPath, ['-e', program], { encoding: 'utf8', timeout: 3000 });
-      assert.equal(child.status, ['pass', 'skip'].includes(scenario) ? 0 : 1, scenario);
+      assert.equal(child.status, ['pass', 'skip', 'suppressed'].includes(scenario) ? 0 : 1, scenario);
       const result = JSON.parse(child.stdout.trim().replace(/^RESULT_JSON=/, ''));
-      assert.equal(result.status, scenario === 'skip' ? 'partial' : scenario === 'pass' ? 'pass' : 'fail');
+      assert.equal(result.status, ['skip', 'suppressed'].includes(scenario) ? 'partial' : scenario === 'pass' ? 'pass' : 'fail');
       assert.ok(!child.stdout.includes('private fixture content'));
     }
   } finally { fs.rmSync(out, { recursive: true, force: true }); }

@@ -56,9 +56,35 @@ FULL_SHA 必须与 LEXILOOP_EXPECT_SHA 及本次实际发布提交一致，不�
 
 导航前通过 CDP Fetch 在页面目标拦截请求。默认允许 GET/HEAD/OPTIONS 和同源
 认证 token 刷新；显式登录时只额外允许既有账号 sign-in，模型开关按上述规则生效。
-数据库写入、全部 RPC、文件上传、注册、OTP 和其他非读取请求被阻止。
-任何意外被阻止的请求或防护错误都使验收失败，包括应用启动时尝试 flushPending。
+除下述统计读取外，其他 RPC、数据库写入、文件上传、注册、OTP 和其他非读取请求被阻止。
+任何**非预期**被阻止的请求或防护错误都使验收失败，包括启动时尝试 flushPending。
 不要为了让验收通过关闭防护；使用干净隔离测试数据并排查触发写入的原因。
+
+### v108 的两条启动依赖
+
+2026-10-20 的现场复测发现：v108 冷启动会调用统计 RPC，换日时还会尝试写今日计划。
+旧策略将两者统称为意外写入，导致三个工具在 prepare 阶段全部失败；九组纯模拟测试
+没有覆盖真实 store.js 的启动顺序，不能据此认为旧工具可在线使用。
+
+- 对同源、精确路径 `/.cloud/database/rest/rpc/study_stats`、无查询参数、无入参的
+  POST 调用，验收浏览器改为 **GET**，移除请求体和相关实体头，保留认证头。
+  不放行统计 POST，不允许其他 RPC，也不支持带参数的同名调用。
+  PostgREST 的 GET 使用只读事务；WorkBuddy 网关对 GET RPC 的支持还需现场复测。
+  若服务器拒绝，验收失败，不自动回退 POST、不修改函数定义或数据库权限。
+- 对形状符合 v108 pushSettings 的 settings upsert（owner_id 冲突键，含 day_plan
+  的日期、due、newGoal）在本地返回明确的 **403 / QA_WRITE_SUPPRESSED**。
+  请求不出浏览器、不落库；不伪造写入成功。应用本身已捕获该写入失败。
+  记录 suppressedSettings 计数，并将持久化检查列为 skip，使汇总至少为 partial。
+  这仅验证抑制写入条件下的读取/渲染，不是未经干预的完整启动验收。
+
+审计区分 readRpc（改写次数）、suppressedSettings（本地抑制次数）、blocked
+（意外拦截）和 guardErrors。仅后两者使防护断言失败；抑制不能被算作真实持久化通过。
+blockedRoutes 仅记录预定义的安全路径类别，不含请求参数、正文或认证信息。
+statsHttpStatuses 仅记录统计 RPC 的数值 HTTP 状态，便于区分 GET 不支持、鉴权失败和请求成功。
+新回归直接加载仓库的 v108 store.js，覆盖换日同步及 GET 被拒绝时不得回退的路径。
+测试中的网络响应仍为本地 fixture，不等于生产 SQL、真实浏览器或网关已经验证。
+
+参考：[PostgREST 事务访问模式](https://docs.postgrest.org/en/stable/references/transactions.html)。
 
 这不是“完全无副作用”：认证可能刷新会话，截图和 JSON 写入本机，显式模型调用
 产生服务用量。防护基于当前 SDK 路径与页面 CDP 目标，不是通用浏览器安全沙箱。
