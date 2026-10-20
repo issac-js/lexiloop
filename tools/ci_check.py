@@ -46,6 +46,7 @@ def main():
     assert "'./styles.css?v=" + version + "'" in sw
     json.loads((APP / 'manifest.webmanifest').read_text())
     run('node', 'tools/qa-fsrs.js')
+    run('node', '--test', 'tools/live-checks.test.js')
     # Import without writing __pycache__ into the served directory.
     sys.dont_write_bytecode = True
     spec = importlib.util.spec_from_file_location('static_server', APP / 'server.py')

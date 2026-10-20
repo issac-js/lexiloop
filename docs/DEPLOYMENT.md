@@ -33,6 +33,7 @@ GitHub PR 的发布包标记 PR 源提交，合并后的发布包标记 main 提
 
 ```bash
 python -B tools/ci_check.py
+python -B tools/check_line_endings.py
 python -B tools/release_bundle.py --sha FULL_SHA
 ```
 
@@ -40,6 +41,15 @@ FULL_SHA 必须是这个 checkout 的完整提交 SHA，不可随意填写。打
 SHA 格式，不证明工作区未修改；自动 CI 以固定 SHA checkout 保证来源对应。
 ZIP 内的 release.json 记录 source_sha、app_version 和 22 个公开资源的 SHA-256。
 它是版本标记，不是数字签名；不要把发布包放入 Git。
+
+### Windows 换行与来源一致性
+
+仓库 `.gitattributes` 固定文本文件 LF，二进制保持原始字节。
+`check_line_endings.py` 检查 Git 索引和工作区中的 CRLF/mixed，不自动改文件；
+该检查要求完整 Git checkout，不能在无 .git 的导出目录中运行。
+Git 的换行规则不会自动修复已存在的工作区文件。检查失败时先确认文件和差异，
+在独立分支中处理，不能对含生产数据的工作目录盲目执行全仓重写。
+正式上线优先使用 CI 产物；本地重建即使逻辑相同，也必须与提交 blob 字节一致后才能部署。
 
 ## 上线验收
 
@@ -54,6 +64,35 @@ python -B tools/verify_deployed.py \
 现有用户数据作为清理方式。页面打开和资源一致不代表云端权限、AI 或学习流程已通过。
 首次部署前线上没有 release.json，因此命令应失败；不能把失败写成验收成功。
 
+资源校验只能证明检查时最终部署内容一致，不能证明发布过程的多文件原子切换。
+带查询参数请求成功也不能证明所有用户缓存已刷新。SW 新旧壳交接需要独立实机验证，
+未测试时应标记待验证，不能写“功能风险为零”。首次发布证据与未测项见
+[2026-10-19 v108 发布记录](releases/2026-10-19-v108.md)。
+
+WorkBuddy 原始验收脚本已从提交 `8267ce11ba6b6c55d0f8a24d56f8f0195032f2d3`
+导入并修正。使用方法及权限边界见 [线上验收工具说明](../tools/README-live-checks.md)：
+
+```bash
+node tools/qa-release-live.js
+node tools/qa-words-read-live.js
+node tools/qa-release-shot.js
+```
+
+运行前必须配置专用 QA profile、既有隔离账号邮箱、浏览器路径和期望 SHA/版本。
+默认不发送验证码、不注册账号、不执行模型调用；仅在明确允许时使用已有账号密码登录。
+模型检查另行显式开启，可能消耗额度。脚本在导航前拦截意外写请求，检测到即失败；
+不以“只读”概括登录、模型和本机截图的副作用。该防护与真实浏览器流程仍需现场复测。
+2026-10-20 的现场复测确认旧防护与 v108 启动链不兼容。修正版将精确无参数的
+study_stats 调用转为 GET，并在浏览器本地以明确错误响应抑制 day_plan 设置写入，
+后者必须记为 skip/partial，不能算持久化通过。服务器不支持 GET RPC 时仍失败，
+不得自动放行 POST；详细边界和复测要求见上面的工具说明。
+原 WorkBuddy 项目已回传 fef2a11 的现场复测：三工具 partial、exit 0、0 fail，
+统计 GET 返回 200，设置写入本地抑制；见
+[2026-10-20 现场复测记录](releases/2026-10-20-live-qa.md)。
+该证据仅覆盖受防护的读取/渲染；持久化等 skip 不计通过。
+CI 仅运行 `node --test tools/live-checks.test.js` 的离线模拟，不跑生产验收。
+结果分为 pass / partial / fail，skip 不计通过；退出码 1/2 表示失败/配置错误。
+
 ## 回滚
 
 如静态资源验收或功能验收失败，在原应用重新发布上一份验收成功的 ZIP，
@@ -61,6 +100,10 @@ python -B tools/verify_deployed.py \
 WorkBuddy 的发布缓存刷新与多文件原子性需要先验证；若平台不能保证整体切换，
 必须记录短暂混用资源风险。Service Worker 可能需要用户点“检查更新”后才接管。
 静态代码回滚不回滚数据库，本流程禁止执行数据库写入和结构迁移。
+
+首次发布前保存的旧站点快照可能没有 release.json 或来源 SHA。恢复这种快照后，
+应与其保存的原始资源清单逐项核对，而不能宣称通过要求 release.json 的
+`verify_deployed.py`。常规带提交标记的发布包按上面的完整 SHA 验证。
 
 ## WorkBuddy 读取私有仓库
 

@@ -1,0 +1,16 @@
+# Canonical text uses LF, including Windows checkouts with core.autocrlf=true.
+* text=auto eol=lf
+
+# Keep binary assets byte-for-byte unchanged.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
