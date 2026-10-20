@@ -86,6 +86,10 @@ node tools/qa-release-shot.js
 study_stats 调用转为 GET，并在浏览器本地以明确错误响应抑制 day_plan 设置写入，
 后者必须记为 skip/partial，不能算持久化通过。服务器不支持 GET RPC 时仍失败，
 不得自动放行 POST；详细边界和复测要求见上面的工具说明。
+原 WorkBuddy 项目已回传 fef2a11 的现场复测：三工具 partial、exit 0、0 fail，
+统计 GET 返回 200，设置写入本地抑制；见
+[2026-10-20 现场复测记录](releases/2026-10-20-live-qa.md)。
+该证据仅覆盖受防护的读取/渲染；持久化等 skip 不计通过。
 CI 仅运行 `node --test tools/live-checks.test.js` 的离线模拟，不跑生产验收。
 结果分为 pass / partial / fail，skip 不计通过；退出码 1/2 表示失败/配置错误。
 

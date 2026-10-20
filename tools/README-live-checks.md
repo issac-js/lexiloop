@@ -69,7 +69,7 @@ FULL_SHA 必须与 LEXILOOP_EXPECT_SHA 及本次实际发布提交一致，不�
 - 对同源、精确路径 `/.cloud/database/rest/rpc/study_stats`、无查询参数、无入参的
   POST 调用，验收浏览器改为 **GET**，移除请求体和相关实体头，保留认证头。
   不放行统计 POST，不允许其他 RPC，也不支持带参数的同名调用。
-  PostgREST 的 GET 使用只读事务；WorkBuddy 网关对 GET RPC 的支持还需现场复测。
+  PostgREST 的 GET 使用只读事务；原项目已报告在 fef2a11 复测中网关返回 200；这不保证其他环境或未来版本。
   若服务器拒绝，验收失败，不自动回退 POST、不修改函数定义或数据库权限。
 - 对形状符合 v108 pushSettings 的 settings upsert（owner_id 冲突键，含 day_plan
   的日期、due、newGoal）在本地返回明确的 **403 / QA_WRITE_SUPPRESSED**。
@@ -119,3 +119,11 @@ python -B tools/ci_check.py
 CI 只运行离线测试，不启动浏览器、登录、访问云库或调用模型。线上浏览器、平台协议、
 实际登录和请求防护仍需 WorkBuddy 在隔离账号下现场复测；离线成功不代表它们已通过。
 异常退出若留下 QA 锁，先确认对应 QA 浏览器确已退出，再人工清理专用目录中的锁。
+
+## 已回传的现场证据
+
+原 WorkBuddy 项目在工具提交 fef2a11 / 正式站 0bfc0f0 v108 下复测：
+三个工具均 partial / exit 0 / 0 fail，统计 GET 返回 200，settings 写入本地抑制。
+维护端未直接读取本机产物；详见
+[2026-10-20 现场复测记录](../docs/releases/2026-10-20-live-qa.md)。
+跳过项仍按未验证处理，不能据此声称完整写入验收通过。
