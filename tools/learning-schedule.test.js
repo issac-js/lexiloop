@@ -219,6 +219,22 @@ test('single-word fallback can confirm attempted recall without being forced to 
   assert.equal(S.state.cards[0].status, 'learning');
 }));
 
+test('starting a new session clears the prior session click cooldown after a clock correction', () => withApp(async ({ S, V, card, seed, requests }) => {
+  const originalNow = Date.now;
+  let now = Date.UTC(2026, 9, 26, 9);
+  try {
+    Date.now = () => now;
+    seed([card(1, 'review', now - 2 * DAY), card(2, 'review', now - 2 * DAY)]);
+    const reveal = {}, button = { dataset: { g: '1' } };
+    globalThis.document = { querySelector: (selector) => selector === '#reveal' ? reveal : null,
+      querySelectorAll: (selector) => selector === '[data-g]' ? [button] : [] };
+    V.resetSession(); V.bindStudy(() => {}, () => {}); reveal.onclick(); await button.onclick();
+    now -= MIN;
+    V.resetSession(); V.bindStudy(() => {}, () => {}); reveal.onclick(); await button.onclick();
+    assert.equal(requests.filter((r) => r.name === 'record_review').length, 2);
+  } finally { Date.now = originalNow; }
+}));
+
 test('touch checkbox focus does not activate the virtual-keyboard layout', async () => {
   const previous = { window: globalThis.window, document: globalThis.document };
   const listeners = {}, classes = new Set();

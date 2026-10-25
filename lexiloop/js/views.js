@@ -1047,6 +1047,7 @@ export function appVersion() {
 }
 
 export function resetSession(mode) {
+  session.answerReadyAt = 0
   session.hinted = null
   session.cloze = null      // 本卡的例句填空信息（朗读要用）
   session.clozeFb = null
@@ -3393,7 +3394,7 @@ export function renderMe() {
     '<div class="field"><label for="st-stepmin">新卡巩固间隔（分钟，第一次想起来后隔多久再见）</label>' +
     '<input class="input" type="number" min="1" max="120" id="st-stepmin" value="' + esc(Number(s.learn_step_minutes) || 10) + '"></div>' +
     '<div class="field"><label for="st-stepdays">新卡跨日复习间隔（天，推荐 1 天）</label>' +
-    '<input class="input" type="number" min="1" max="7" id="st-stepdays" value="' + esc(Number(s.learn_step_days) || 1) + '"></div>' +
+    '<input class="input" type="text" inputmode="numeric" pattern="[1-7]" maxlength="1" id="st-stepdays" value="' + esc(Number(s.learn_step_days) || 1) + '"></div>' +
     '<p class="tiny">新卡先成功回忆，再于巩固间隔后成功回忆，之后安排跨日复习。忘了重新巩固；吃力不推进阶段。修改设置只影响后续评分，不重排已有到期日。</p>' +
     '<label class="row" style="gap:8px;align-items:center;margin:4px 0 8px;">' +
     '<input type="checkbox" id="st-pause-new"' + (String(s.pause_new_when_overdue) !== 'false' ? ' checked' : '') + '>' +
@@ -3772,6 +3773,9 @@ export function bindMe(onChanged, go, onSignOut) {
     ret.oninput = upd
     upd()
   }
+
+  const stepDays = $('#st-stepdays')
+  if (stepDays) stepDays.onfocus = () => stepDays.select()
 
   $('#st-save').onclick = async () => {
     S.state.settings.daily_new = Math.max(0, Number($('#st-new').value) || 0)

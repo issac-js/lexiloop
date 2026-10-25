@@ -21,7 +21,7 @@ final class SafariTests: XCTestCase {
         }
         if !rhythm.exists { print(safari.debugDescription) }
         XCTAssertTrue(rhythm.exists, "Settings navigation did not complete")
-        let interval = web.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "新卡跨日复习间隔")).firstMatch
+        let interval = web.textFields.matching(NSPredicate(format: "label CONTAINS %@", "新卡跨日复习间隔")).firstMatch
         for _ in 0..<8 {
             if interval.exists && interval.isHittable { break }
             web.swipeUp()
@@ -29,7 +29,6 @@ final class SafariTests: XCTestCase {
         XCTAssertTrue(interval.exists, "Missing labelled day interval field")
         interval.tap()
         XCTAssertTrue(safari.keyboards.firstMatch.waitForExistence(timeout: 5), "Number input did not open the software keyboard")
-        interval.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
         safari.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 8) + "1")
         print("Native day interval after typing: \(interval.value ?? "no value")")
         let save = web.buttons["保存设置"].firstMatch
