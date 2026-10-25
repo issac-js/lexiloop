@@ -14,7 +14,7 @@ GitHub 自动离线检查和发布包已配置并已在 GitHub Actions 成功运
 ## 检查和固定发布来源
 
 1. 在独立分支修复应用并用 `tools/bump_version.py` 更新版本。
-2. 提交 PR，确认 `LexiLoop checks and release bundle / check` 成功。
+2. 提交 PR，确认 `LexiLoop checks and release bundle` 的 `check`、`browser`、`ios-safari` 对同一最终提交全部成功。后两项为隔离夹具浏览器和 Simulator 测试，边界见 [浏览器复测说明](../tools/README-browser-checks.md)。
 3. 审核后合并到 main；等待 main 的检查成功。
 4. 从该次 main 检查下载 `lexiloop-FULL_SHA` artifact，保存 ZIP 和 SHA-256 文件。
 5. WorkBuddy 先读取并核对发布说明，准备 ZIP 中的文件，保留原应用绑定配置。

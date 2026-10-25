@@ -37,12 +37,15 @@ export const CARD_TYPES = {
 
 /** 推荐节奏（Kevin 2026-09-29 定稿）：一键还原用，也是新装设备的默认值。
  *  改这里就等于改"推荐值"，设置页的「用推荐设置」按钮直接读这个对象。 */
+export const RECOMMENDED_LEARN_STEP_DAYS = 1
+
 export const RECOMMENDED_SETTINGS = {
   daily_new: 8,               // 每日新学词数
-  daily_max_review: 300,      // 每日复习上限
+  daily_max_review: 300,      // 每日正式作答上限（含新学、重试与练习计入）
   target_retention: 0.9,      // 目标留存率 90%
   learn_step_minutes: 10,     // 新卡巩固间隔（分钟）
-  learn_step_days: 1,         // 新卡次日间隔（天）
+  learn_step_days: RECOMMENDED_LEARN_STEP_DAYS,
+  pause_new_when_overdue: true, // 有跨日积压时先复习
   queue_interleave: 4,        // 交错比例
   goal_include_test: true,    // 达标需含每周抽测
   rest_weekday: 0,            // 周日休息日
@@ -50,18 +53,10 @@ export const RECOMMENDED_SETTINGS = {
 }
 
 export const DEFAULT_SETTINGS = {
-  daily_new: 8,              // 稳比快重要：3030 词存量，8/天 ≈ 380 天走完，日均 15-20 分钟
-  daily_max_review: 300,     // 复习上限放宽，到期多时不至于卡住队列
-  target_retention: 0.9,
+  ...RECOMMENDED_SETTINGS,
   card_types: ['recognition'],
   deck: '默认词单',
   llm_model: null,
-  learn_step_minutes: 10,
-  learn_step_days: 1,
-  queue_interleave: 4,
-  goal_include_test: true,   // 达标需含每周抽测：没有跨日检索数据，达标就退化成机械打卡
-  rest_weekday: 0,           // 周日休息日：只复习不引新词，留一天做整合与抽测
-  auto_credit: true,         // 练习/抽测结束自动写入复习计划（按用时分档 4/3/2/1）
   last_backup_at: null,      // 上次导出 JSON 备份的时间戳（null = 从未备份）
   backup_snooze_until: 0,    // 告警卡"7 天后再提醒"的到期时间，两个字段都随 extra 同步到云端
   test_mode: 'mixed',        // 每周抽测题型：mixed（6 选择 + 4 产出，推荐）/ choice / write

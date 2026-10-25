@@ -227,13 +227,28 @@ export function speak(text, opts) {
 if (typeof document !== 'undefined' && !window.__lexiloopKbdBound &&
     typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches) {
   window.__lexiloopKbdBound = true
+  let blurTimer = null
+  const needsKeyboard = (el) => el &&
+    ((el.tagName === 'INPUT' && !/^(checkbox|radio|range|button|submit|reset|file|color|hidden)$/i.test(el.type || '')) ||
+      /^(TEXTAREA|SELECT)$/.test(el.tagName))
+  const finishBlur = () => {
+    clearTimeout(blurTimer)
+    if (!needsKeyboard(document.activeElement)) document.body.classList.remove('kbd')
+  }
   document.addEventListener('focusin', (e) => {
     const el = e.target
-    if (el && el.tagName && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) {
+    if (needsKeyboard(el)) {
+      clearTimeout(blurTimer)
       document.body.classList.add('kbd')
     }
   })
-  document.addEventListener('focusout', () => document.body.classList.remove('kbd'))
+  // Safari 先 blur 再 click。等按钮自身的 click 读完表单后再恢复底栏，
+  // 避免第一次点保存只收起键盘，底栏在点按中重新出现并截走点击。
+  document.addEventListener('focusout', () => {
+    clearTimeout(blurTimer)
+    blurTimer = setTimeout(finishBlur, 300)
+  })
+  document.addEventListener('click', finishBlur)
 }
 
 // 例句点读：任何带 data-say 的元素点击即朗读（各页面渲染的例句共用一套委托）
