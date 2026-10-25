@@ -206,6 +206,19 @@ test('real study click handlers preserve retry event IDs, apply the displayed gr
   assert.equal(S.pendingCount(), 0);
 }));
 
+test('single-word fallback can confirm attempted recall without being forced to Again', () => withApp(async ({ S, V, card, seed, requests }) => {
+  seed([card(1, 'new')]);
+  const check = {}, button = { dataset: { g: '3' } };
+  globalThis.document = { querySelector: (selector) => selector === '#ans-check' ? check : null,
+    querySelectorAll: (selector) => selector === '[data-g]' ? [button] : [] };
+  V.resetSession();
+  assert.match(V.renderStudy(), /id="ans-check"/);
+  V.bindStudy(() => {}, () => {}); check.onclick();
+  await button.onclick();
+  assert.equal(requests.find((r) => r.name === 'record_review').args.p_grade, 3);
+  assert.equal(S.state.cards[0].status, 'learning');
+}));
+
 test('overdue cards pause fresh words; same-day due cards, filters and suspended cards are handled correctly', () => withApp(({ S, card, seed }) => {
   const start = new Date(); start.setHours(0, 0, 0, 0);
   seed([card(1, 'review', start.getTime() - MIN), card(2, 'new')]);

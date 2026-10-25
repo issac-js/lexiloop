@@ -1,0 +1,157 @@
+'use strict';
+// Actual browser engines against a loopback SDK fixture. This is not production gateway QA.
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { chromium, webkit, devices } = require('playwright');
+const { serveFixture } = require('./lib/browser-fixture-server.js');
+const OUT = path.resolve(process.env.LEXILOOP_BROWSER_OUT_DIR || path.join(os.tmpdir(), 'lexiloop-browser-results'));
+const results = [];
+const VERSION = fs.readFileSync(path.join(__dirname, '../lexiloop/index.html'), 'utf8').match(/app\.js\?v=(\d+)/)[1];
+const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function main() {
+  fs.mkdirSync(OUT, { recursive: true });
+  const fixture = await serveFixture();
+  const variants = [
+    { name: 'chromium-desktop', engine: chromium, options: { viewport: { width: 1440, height: 1000 } }, full: true },
+    { name: 'webkit-iphone-se', engine: webkit, options: { ...devices['iPhone SE'] }, full: true },
+    { name: 'webkit-iphone-large', engine: webkit, options: { ...devices['iPhone 14 Pro Max'] } },
+    { name: 'webkit-iphone-landscape', engine: webkit, options: { ...devices['iPhone SE landscape'] } },
+    { name: 'webkit-ipad', engine: webkit, options: { ...devices['iPad Mini'] } },
+  ];
+  try {
+    for (const variant of variants) {
+      let browser, context;
+      const errors = [], external = [];
+      const check = async (name, run) => {
+        try { const detail = await run(); results.push({ device: variant.name, name, pass: true, detail }); console.log('PASS ' + variant.name + ': ' + name); }
+        catch (error) { results.push({ device: variant.name, name, pass: false, error: error.stack }); console.error('FAIL ' + variant.name + ': ' + name + ': ' + error.message); }
+      };
+      try {
+        browser = await variant.engine.launch({ headless: true });
+        context = await browser.newContext({ ...variant.options, serviceWorkers: 'block', locale: 'zh-CN' });
+        await context.route('**/*', (route) => {
+          if (new URL(route.request().url()).origin !== fixture.url) { external.push(route.request().url()); return route.abort(); }
+          return route.continue();
+        });
+        let page;
+        const open = async (scenario = 'normal') => {
+          if (page) await page.close();
+          page = await context.newPage(); page.on('pageerror', (error) => errors.push(error.message));
+          await page.goto(fixture.url + '/?nosw=1&fixture=' + scenario);
+          await page.waitForFunction(async (v) => (await import('./js/store.js?v=' + v)).state.load.phase === 'ready', VERSION);
+          await page.locator('.tabbar button[data-tab=me]').waitFor();
+        };
+        const tab = async (name) => { await page.locator('.tabbar button[data-tab=' + name + ']').click(); };
+        const layout = async () => {
+          const measure = await page.evaluate(() => ({
+            overflow: document.documentElement.scrollWidth - innerWidth,
+            inputs: [...document.querySelectorAll('input:not([type=checkbox]):not([type=range]),select,textarea')].filter((e) => e.getBoundingClientRect().width).map((e) => ({ id: e.id, font: parseFloat(getComputedStyle(e).fontSize) })),
+            labels: [...document.querySelectorAll('label.row')].filter((e) => e.querySelector('input[type=checkbox]')).map((e) => ({ id: e.querySelector('input').id, height: e.getBoundingClientRect().height })),
+            coarse: matchMedia('(pointer: coarse)').matches,
+          }));
+          assert.ok(measure.overflow <= 1, JSON.stringify(measure));
+          for (const input of measure.inputs) assert.ok(input.font >= 16, 'input zoom risk: ' + JSON.stringify(input));
+          if (measure.coarse) for (const label of measure.labels) assert.ok(label.height >= 44, 'small touch target: ' + JSON.stringify(label));
+          return measure;
+        };
+        await check('six-page layout, controls and screenshots', async () => {
+          await open();
+          for (const name of ['today', 'study', 'games', 'library', 'stats', 'me']) {
+            await tab(name); await layout();
+            await page.screenshot({ path: path.join(OUT, variant.name + '-' + name + '.png'), fullPage: true });
+          }
+        });
+        await check('settings recommendation, saved value and refresh', async () => {
+          await open(); await tab('me');
+          assert.equal(await page.locator('#st-stepdays').inputValue(), '7');
+          await page.locator('#st-recommend').click();
+          await page.waitForFunction(() => document.querySelector('#st-stepdays')?.value === '1');
+          await page.locator('#st-stepdays').fill('1'); await page.locator('#st-pause-new').uncheck();
+          await page.locator('#st-save').click(); await page.reload();
+          await page.waitForFunction(async (v) => (await import('./js/store.js?v=' + v)).state.load.phase === 'ready', VERSION);
+          await tab('me'); assert.equal(await page.locator('#st-stepdays').inputValue(), '1');
+          assert.equal(await page.locator('#st-pause-new').isChecked(), false);
+          // Blur number input before returning to fixed navigation (the mobile keyboard hides it).
+          await page.locator('#st-stepdays').focus();
+          if (variant.options.hasTouch) assert.equal(await page.locator('.tabbar').isVisible(), false);
+          await page.locator('#st-stepdays').blur();
+          assert.equal(await page.locator('.tabbar').isVisible(), true);
+        });
+        if (variant.full) {
+          await check('daily cap survives repeated entry and browser reload', async () => {
+            await open('quota'); await tab('study');
+            for (let i = 0; i < 2; i++) { await page.locator('#ans-reveal,#reveal').first().click(); await page.locator('[data-g="1"]').click(); await pause(400); }
+            await page.getByText('已达到今日作答上限', { exact: true }).waitFor();
+            const count = await page.evaluate(() => window.__QA.snapshot().reviews.length);
+            assert.equal(count, 2);
+            await page.reload();
+            await page.locator('#start-study:disabled').waitFor();
+            await tab('study'); await page.getByText('已达到今日作答上限', { exact: true }).waitFor();
+            assert.equal(await page.evaluate(() => window.__QA.snapshot().reviews.length), 2);
+          });
+          await check('failed new card requires successful short consolidation before one day', async () => {
+            await open('learning');
+            const answer = async (grade, reveal) => {
+              await tab('today'); await page.locator('#start-study').click();
+              if (reveal) await page.locator('#ans-reveal,#reveal').first().click();
+              else await page.locator('#ans-check').click();
+              const buttons = page.locator('[data-g]');
+              if (!await buttons.count()) throw Error('No grade controls');
+              await page.locator('[data-g="' + grade + '"]').click(); await pause(400);
+            };
+            await answer(1, true);
+            const next = async () => {
+              await page.evaluate(async (v) => {
+                const S = await import('./js/store.js?v=' + v);
+                const due = Math.min(...S.state.cards.map((c) => c.due)); window.__QA.advance(Math.max(0, due - Date.now()) + 1000);
+              }, VERSION);
+            };
+            await next(); await answer(1, true);
+            await next();
+            await answer(3, false);
+            let card = await page.evaluate(() => window.__QA.snapshot().cards[0]);
+            assert.equal(card.status, 'learning');
+            assert.ok(Math.abs(new Date(card.due) - new Date(card.last_review_at) - 600000) < 1500);
+            await next(); await answer(3, false);
+            card = await page.evaluate(() => window.__QA.snapshot().cards[0]);
+            assert.equal(card.status, 'review');
+            assert.ok(Math.abs(new Date(card.due) - new Date(card.last_review_at) - 86400000) < 1500);
+            await page.reload();
+            await page.waitForFunction(async (v) => (await import('./js/store.js?v=' + v)).state.load.phase === 'ready', VERSION);
+            assert.equal(await page.evaluate(async (v) => (await import('./js/store.js?v=' + v)).state.cards[0].status, VERSION), 'review');
+          });
+          await check('overdue pause, settings opt-out and automatic recovery', async () => {
+            await open('overdue');
+            await page.getByText(/跨日逾期卡/).waitFor();
+            assert.equal(await page.evaluate(async (v) => (await import('./js/store.js?v=' + v)).newAllowance(), VERSION), 0);
+            await tab('me'); await page.locator('#st-pause-new').uncheck(); await page.locator('#st-save').click();
+            assert.ok(await page.evaluate(async (v) => (await import('./js/store.js?v=' + v)).newAllowance(), VERSION) > 0);
+          });
+          await check('1205 cards are hydrated through three SDK pages', async () => {
+            await open('large');
+            const snapshot = await page.evaluate(async (v) => {
+              const S = await import('./js/store.js?v=' + v); return { cards: S.state.cards.length, words: S.state.words.length, ranges: window.__QA.snapshot().ranges };
+            }, VERSION);
+            assert.equal(snapshot.cards, 1205); assert.equal(snapshot.words, 1205);
+            assert.deepEqual(snapshot.ranges.filter((r) => r.table === 'cards').map((r) => r.from), [0, 500, 1000]);
+          });
+        }
+        await check('no uncaught page errors, external requests or cloud calls', async () => {
+          assert.deepEqual(errors, []); assert.deepEqual(external, []); assert.deepEqual(fixture.audit.cloudRequests, []);
+        });
+      } catch (error) { results.push({ device: variant.name, name: 'browser setup', pass: false, error: error.stack }); }
+      finally { if (context) await context.close(); if (browser) await browser.close(); }
+    }
+  } finally {
+    await new Promise((resolve) => fixture.server.close(resolve));
+    const summary = { version: VERSION, scope: 'actual Chromium/WebKit, synthetic SDK and loopback only; iOS profiles are emulation, not physical devices',
+      pass: results.filter((r) => r.pass).length, fail: results.filter((r) => !r.pass).length, results };
+    fs.writeFileSync(path.join(OUT, 'browser-results.json'), JSON.stringify(summary, null, 2));
+    console.log(JSON.stringify({ pass: summary.pass, fail: summary.fail, out: OUT }));
+    if (summary.fail) process.exitCode = 1;
+  }
+}
+main().catch((error) => { console.error(error); process.exitCode = 1; });

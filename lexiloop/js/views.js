@@ -1425,8 +1425,9 @@ export function renderStudy() {
           '<div class="row" style="gap:10px;margin-top:8px;justify-content:center;">' +
           '<button class="btn sm ghost" id="ans-reveal">不会，看答案</button>' +
           '</div>'
-        : // 选项不足（词库太小）：只给"看答案"
-          '<div class="row" style="gap:10px;margin-top:8px;justify-content:center;">' +
+        : // 没有干扰项时保留主动回忆路径，不能让所有自评都被当成直接看答案。
+          '<div class="btn-group" style="margin-top:8px;justify-content:center;">' +
+          '<button class="btn soft" id="ans-check">已尝试回忆，核对答案</button>' +
           '<button class="btn sm ghost" id="ans-reveal">不会，看答案</button></div>'
     } else {
       // 打字卡（production / cloze / 抽测）：主路径（提交）→ 降级（不会，看答案）
@@ -1530,7 +1531,9 @@ export function renderStudy() {
       : '') +
     feedback +
     answerArea +
-    (session.shown ? '' : (interactive ? '' : '<button class="btn soft reveal-btn" id="reveal">' + esc(revealLabel) + '</button>')) +
+    (session.shown ? '' : (interactive ? '' : '<div class="btn-group" style="justify-content:center;margin-top:12px;">' +
+      '<button class="btn soft" id="ans-check">已尝试回忆，核对答案</button>' +
+      '<button class="btn ghost" id="reveal">' + esc(revealLabel) + '</button></div>')) +
     (session.shown ? '<div class="answer">' + answerBody + '</div>' : '') +
     (session.shown
       ? '<div class="grades' + (suggest ? ' has-sug' : '') + '">' + gradeButtons + '</div>' +
@@ -1624,6 +1627,14 @@ export function bindStudy(go, onChanged) {
   if (reveal) reveal.onclick = () => {
     // 没尝试作答就揭晓 = 硬提示：这次不算成功提取，按忘了处理
     session.hinted = 'hard'
+    session.shown = true
+    session.cardShownAt = Date.now()
+    onChanged()
+  }
+  const recallCheck = $('#ans-check')
+  if (recallCheck) recallCheck.onclick = () => {
+    // 已听过答案仍算硬提示，不能通过核对按钮抹掉。
+    if (session.hinted !== 'hard') session.hinted = 'soft'
     session.shown = true
     session.cardShownAt = Date.now()
     onChanged()
