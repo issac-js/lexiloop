@@ -13,17 +13,18 @@ trigger.onclick = async () => {
   const assert = (ok, message) => { if (!ok) throw Error(message); };
   const check = async (name, run) => {
     try { const detail = await run(); results.push({ name, pass: true, detail }); }
-    catch (error) { results.push({ name, pass: false, error: String(error.stack || error) }); }
+    catch (error) { results.push({ name, pass: false, error: String(error.message || error) + '\n' + String(error.stack || '') }); }
   };
   const tap = async (selector) => {
-    const element = document.querySelector(selector); assert(element, 'Missing ' + selector); element.click(); await wait(150);
+    const element = document.querySelector(selector); assert(element, 'Missing ' + selector + '; budget=' + S.dailyReviewAllowance() + '; page=' + document.querySelector('#main')?.textContent.slice(0, 180)); element.click(); await wait(150);
   };
   const reset = async (name) => {
     window.__QA.reset(name); S.state.user = { id: 'ios-fixture-' + name }; S.state.settings.day_plan = null;
     await S.syncPull(); window.__lexiloopRender(); await tap('[data-tab=today]');
   };
   await check('native Safari settings edit persisted as one day', () => {
-    assert(window.__QA.snapshot().settings.extra.learn_step_days === 1, 'Native edit did not save');
+    const actual = window.__QA.snapshot().settings.extra.learn_step_days;
+    assert(actual === 1, 'Native edit did not save: ' + actual);
   });
   await check('six pages fit Safari viewport and touch targets', async () => {
     const measurements = [];
@@ -55,8 +56,9 @@ trigger.onclick = async () => {
   });
   await check('daily limit blocks re-entry; tomorrow restores allowance', async () => {
     await reset('quota');
+    await tap('[data-tab=study]');
     for (let i = 0; i < 2; i++) {
-      await tap('[data-tab=study]'); await tap('#ans-reveal'); await tap('[data-g="1"]'); await wait(400);
+      await tap('#ans-reveal'); await tap('[data-g="1"]'); await wait(400);
     }
     assert(S.dailyReviewAllowance() === 0, 'Daily cap not exhausted');
     await tap('[data-tab=today]'); assert(document.querySelector('#start-study').disabled, 'Cap bypass via re-entry');

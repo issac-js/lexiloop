@@ -112,8 +112,12 @@ jobs:
         run: |
           cd tools/ios
           xcodegen generate
-          xcodebuild test -project LexiLoopSafariQA.xcodeproj -scheme SafariQA -destination "platform=iOS Simulator,id=$LEXILOOP_SIMULATOR_ID" -parallel-testing-enabled NO -resultBundlePath "$LEXILOOP_BROWSER_OUT_DIR/SafariQA.xcresult" CODE_SIGNING_ALLOWED=NO > "$LEXILOOP_BROWSER_OUT_DIR/xcodebuild.log" 2>&1
+          if ! xcodebuild test -project LexiLoopSafariQA.xcodeproj -scheme SafariQA -destination "platform=iOS Simulator,id=$LEXILOOP_SIMULATOR_ID" -parallel-testing-enabled NO -resultBundlePath "$LEXILOOP_BROWSER_OUT_DIR/SafariQA.xcresult" CODE_SIGNING_ALLOWED=NO > "$LEXILOOP_BROWSER_OUT_DIR/xcodebuild.log" 2>&1; then
+            tail -100 "$LEXILOOP_BROWSER_OUT_DIR/xcodebuild.log"
+            exit 1
+          fi
       - name: Check Simulator Safari report
+        if: always()
         run: |
           python3 - <<'PY'
           import json, os

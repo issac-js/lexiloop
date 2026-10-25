@@ -29,7 +29,9 @@ final class SafariTests: XCTestCase {
         XCTAssertTrue(interval.exists, "Missing labelled day interval field")
         interval.tap()
         XCTAssertTrue(safari.keyboards.firstMatch.waitForExistence(timeout: 5), "Number input did not open the software keyboard")
-        safari.typeText(XCUIKeyboardKey.delete.rawValue + "1")
+        interval.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+        safari.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 8) + "1")
+        print("Native day interval after typing: \(interval.value ?? "no value")")
         let save = web.buttons["保存设置"].firstMatch
         for _ in 0..<8 {
             if save.exists && save.isHittable { break }
@@ -39,7 +41,9 @@ final class SafariTests: XCTestCase {
         save.tap()
         XCTAssertTrue(run.waitForExistence(timeout: 10))
         run.tap()
-        XCTAssertTrue(safari.staticTexts["IOS_QA_PASS"].firstMatch.waitForExistence(timeout: 90), "Safari DOM checks did not pass")
+        let result = safari.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "IOS_QA_")).firstMatch
+        XCTAssertTrue(result.waitForExistence(timeout: 45), "Safari report did not arrive")
+        XCTAssertEqual(result.label, "IOS_QA_PASS", "Safari DOM checks did not pass")
         let portrait = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         portrait.name = "iOS Safari portrait"; portrait.lifetime = .keepAlways; add(portrait)
         XCUIDevice.shared.orientation = .landscapeLeft

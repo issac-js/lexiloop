@@ -80,6 +80,7 @@ async function main() {
           await page.locator('#st-stepdays').focus();
           if (variant.options.hasTouch) assert.equal(await page.locator('.tabbar').isVisible(), false);
           await page.locator('#st-stepdays').blur();
+          await page.locator('.tabbar').waitFor({ state: 'visible' });
           assert.equal(await page.locator('.tabbar').isVisible(), true);
         });
         if (variant.full) {

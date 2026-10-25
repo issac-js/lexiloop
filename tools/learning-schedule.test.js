@@ -224,17 +224,18 @@ test('touch checkbox focus does not activate the virtual-keyboard layout', async
   const listeners = {}, classes = new Set();
   try {
     globalThis.window = { matchMedia: () => ({ matches: true }), addEventListener() {} };
-    globalThis.document = { addEventListener: (name, fn) => { listeners[name] = fn; },
+    globalThis.document = { addEventListener: (name, fn) => { (listeners[name] ||= []).push(fn); },
       body: { classList: { add: (name) => classes.add(name), remove: (name) => classes.delete(name) } } };
     const source = fs.readFileSync(path.join(__dirname, '../lexiloop/js/ui.js'), 'utf8');
     await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
     for (const type of ['checkbox', 'radio', 'range']) {
-      listeners.focusin({ target: { tagName: 'INPUT', type } });
+      listeners.focusin[0]({ target: { tagName: 'INPUT', type } });
       assert.equal(classes.has('kbd'), false, type + ' must not hide navigation');
     }
-    listeners.focusin({ target: { tagName: 'INPUT', type: 'number' } });
+    listeners.focusin[0]({ target: { tagName: 'INPUT', type: 'number' } });
     assert.equal(classes.has('kbd'), true);
-    listeners.focusout(); assert.equal(classes.has('kbd'), false);
+    listeners.focusout[0](); assert.equal(classes.has('kbd'), true, 'blur must not move navigation before the save click');
+    listeners.click[0](); assert.equal(classes.has('kbd'), false);
   } finally { Object.assign(globalThis, previous); }
 });
 
