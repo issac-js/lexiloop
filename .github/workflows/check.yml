@@ -90,7 +90,9 @@ jobs:
           python3 - <<'PY'
           import json, os, subprocess
           devices = json.loads(subprocess.check_output(['xcrun', 'simctl', 'list', 'devices', 'available', '-j']))['devices']
-          candidates = [d for runtime in sorted(devices, reverse=True) if '.iOS-' in runtime for d in devices[runtime] if d['name'].startswith('iPhone')]
+          sdk = tuple(map(int, subprocess.check_output(['xcrun', '--sdk', 'iphonesimulator', '--show-sdk-version'], text=True).strip().split('.')))
+          runtimes = [r for r in devices if '.iOS-' in r and tuple(map(int, r.split('.iOS-')[-1].split('-'))) <= sdk]
+          candidates = [d for runtime in sorted(runtimes, reverse=True) for d in devices[runtime] if d['name'].startswith('iPhone')]
           if not candidates: raise SystemExit('No available iOS Simulator; not a passing or skipped test')
           with open(os.environ['GITHUB_ENV'], 'a') as f:
               f.write('LEXILOOP_SIMULATOR_ID=' + candidates[0]['udid'] + '\n')
@@ -104,6 +106,7 @@ jobs:
           xcrun simctl boot "$LEXILOOP_SIMULATOR_ID" || true
           xcrun simctl bootstatus "$LEXILOOP_SIMULATOR_ID" -b
           xcrun simctl status_bar "$LEXILOOP_SIMULATOR_ID" override --time '9:41' --batteryState charged --batteryLevel 100
+          defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool NO
           open -a Simulator
       - name: Native Safari taps, input, keyboard and learning checks
         run: |

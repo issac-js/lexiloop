@@ -669,14 +669,15 @@ textarea.input { resize: vertical; min-height: 120px; line-height: 1.6; }
   .btn.sm { min-height: 44px; }
   .tabbar button { min-height: 52px; }
   .choice { min-height: 52px; }
-  /* 分段控件（.seg button）原本靠 padding 撑到 ~35px，触控目标不足；
-     .seg 有两处定义（264 / 490 行），只在这里统一兜住 min-height 即可。
-     40px 是它的上限：再高会让"混合/全选择/全产出"这排切换器喧宾夺主。 */
-  .seg button { min-height: 40px; }
+  .seg button { min-height: 44px; }
   .input, select.input, textarea.input { min-height: 46px; }
+  /* 整行标签都可点按，短文案开关也不能退化成 19px 的触控区域。 */
+  label.row { min-height: 44px; cursor: pointer; }
+  label.row input[type="checkbox"] { flex: none; width: 20px; height: 20px; }
+  label.row > span { min-width: 0; }
   /* 键盘弹起时（body.kbd）固定底栏会浮在键盘上方、压住输入框 —— 先收起来 */
   body.kbd .tabbar { display: none; }
-  body.kbd .main { padding-bottom: calc(24px + var(--safe-b)); }
+  /* 保留 main 的原始底部留白：聚焦切换时改变文档高度，会让保存按钮在点按中移动。 */
   body.kbd .modal { max-height: 60dvh; }
 }
 

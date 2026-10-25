@@ -10,18 +10,26 @@ final class SafariTests: XCTestCase {
         let safari = XCUIApplication(bundleIdentifier: "com.apple.mobilesafari")
         XCTAssertTrue(safari.webViews.firstMatch.waitForExistence(timeout: 60))
         let web = safari.webViews.firstMatch
+        let run = safari.buttons["运行兼容性复测"].firstMatch
+        XCTAssertTrue(run.waitForExistence(timeout: 30), "Fixture bootstrap must finish before native taps")
         let me = web.buttons["我的"].firstMatch
         XCTAssertTrue(me.waitForExistence(timeout: 30))
-        me.tap()
-        let interval = web.textFields.matching(NSPredicate(format: "label CONTAINS %@", "新卡跨日复习间隔")).firstMatch
+        let rhythm = web.staticTexts["学习节奏"].firstMatch
+        for _ in 0..<3 {
+            me.tap()
+            if rhythm.waitForExistence(timeout: 3) { break }
+        }
+        if !rhythm.exists { print(safari.debugDescription) }
+        XCTAssertTrue(rhythm.exists, "Settings navigation did not complete")
+        let interval = web.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "新卡跨日复习间隔")).firstMatch
         for _ in 0..<8 {
             if interval.exists && interval.isHittable { break }
             web.swipeUp()
         }
         XCTAssertTrue(interval.exists, "Missing labelled day interval field")
         interval.tap()
-        let old = (interval.value as? String) ?? "7"
-        interval.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: old.count) + "1")
+        XCTAssertTrue(safari.keyboards.firstMatch.waitForExistence(timeout: 5), "Number input did not open the software keyboard")
+        safari.typeText(XCUIKeyboardKey.delete.rawValue + "1")
         let save = web.buttons["保存设置"].firstMatch
         for _ in 0..<8 {
             if save.exists && save.isHittable { break }
@@ -29,7 +37,6 @@ final class SafariTests: XCTestCase {
         }
         XCTAssertTrue(save.exists)
         save.tap()
-        let run = safari.buttons["运行兼容性复测"].firstMatch
         XCTAssertTrue(run.waitForExistence(timeout: 10))
         run.tap()
         XCTAssertTrue(safari.staticTexts["IOS_QA_PASS"].firstMatch.waitForExistence(timeout: 90), "Safari DOM checks did not pass")

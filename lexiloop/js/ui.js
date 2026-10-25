@@ -229,7 +229,9 @@ if (typeof document !== 'undefined' && !window.__lexiloopKbdBound &&
   window.__lexiloopKbdBound = true
   document.addEventListener('focusin', (e) => {
     const el = e.target
-    if (el && el.tagName && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) {
+    const textInput = el && el.tagName === 'INPUT' &&
+      !/^(checkbox|radio|range|button|submit|reset|file|color|hidden)$/i.test(el.type || '')
+    if (el && (textInput || /^(TEXTAREA|SELECT)$/.test(el.tagName))) {
       document.body.classList.add('kbd')
     }
   })

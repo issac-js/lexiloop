@@ -219,6 +219,25 @@ test('single-word fallback can confirm attempted recall without being forced to 
   assert.equal(S.state.cards[0].status, 'learning');
 }));
 
+test('touch checkbox focus does not activate the virtual-keyboard layout', async () => {
+  const previous = { window: globalThis.window, document: globalThis.document };
+  const listeners = {}, classes = new Set();
+  try {
+    globalThis.window = { matchMedia: () => ({ matches: true }), addEventListener() {} };
+    globalThis.document = { addEventListener: (name, fn) => { listeners[name] = fn; },
+      body: { classList: { add: (name) => classes.add(name), remove: (name) => classes.delete(name) } } };
+    const source = fs.readFileSync(path.join(__dirname, '../lexiloop/js/ui.js'), 'utf8');
+    await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
+    for (const type of ['checkbox', 'radio', 'range']) {
+      listeners.focusin({ target: { tagName: 'INPUT', type } });
+      assert.equal(classes.has('kbd'), false, type + ' must not hide navigation');
+    }
+    listeners.focusin({ target: { tagName: 'INPUT', type: 'number' } });
+    assert.equal(classes.has('kbd'), true);
+    listeners.focusout(); assert.equal(classes.has('kbd'), false);
+  } finally { Object.assign(globalThis, previous); }
+});
+
 test('overdue cards pause fresh words; same-day due cards, filters and suspended cards are handled correctly', () => withApp(({ S, card, seed }) => {
   const start = new Date(); start.setHours(0, 0, 0, 0);
   seed([card(1, 'review', start.getTime() - MIN), card(2, 'new')]);

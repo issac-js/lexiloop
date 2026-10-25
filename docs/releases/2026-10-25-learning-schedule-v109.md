@@ -25,7 +25,7 @@
 ## 验证
 
 - `node tools/qa-fsrs.js`：原有 50 项检查通过。
-- `node --test tools/learning-schedule.test.js`：新增 14 组离线回归通过，直接加载实际应用模块，覆盖连续遗忘、吃力停留、JSON 往返、成熟卡、配额、刷新、统计滞后、换日、账号隔离、测试模式、练习计入、实际学习点击与事件重放、积压与目标页面。
+- `node --test tools/learning-schedule.test.js`：新增 16 组离线回归通过，直接加载实际应用模块，覆盖连续遗忘、吃力停留、JSON 往返、成熟卡、配额、刷新、统计滞后、换日、账号隔离、测试模式、练习计入、实际学习点击与事件重放、单词库主动回忆入口、积压与目标页面。
 - `python -B tools/ci_check.py`：语法、资源版本、既有 11 组验收工具回归、新增学习回归、22 个静态资源本地 HTTP 检查。
 - `python -B tools/check_line_endings.py`：文本 LF 检查。
 - 本地使用 Python 3.12 / Node 24；GitHub 工作流使用 Python 3.12 / Node 22，最终结果以该提交的 Actions 为准。

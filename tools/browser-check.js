@@ -60,8 +60,9 @@ async function main() {
         await check('six-page layout, controls and screenshots', async () => {
           await open();
           for (const name of ['today', 'study', 'games', 'library', 'stats', 'me']) {
-            await tab(name); await layout();
+            await tab(name);
             await page.screenshot({ path: path.join(OUT, variant.name + '-' + name + '.png'), fullPage: true });
+            await layout();
           }
         });
         await check('settings recommendation, saved value and refresh', async () => {
@@ -73,7 +74,8 @@ async function main() {
           await page.locator('#st-save').click(); await page.reload();
           await page.waitForFunction(async (v) => (await import('./js/store.js?v=' + v)).state.load.phase === 'ready', VERSION);
           await tab('me'); assert.equal(await page.locator('#st-stepdays').inputValue(), '1');
-          assert.equal(await page.locator('#st-pause-new').isChecked(), false);
+          assert.equal(await page.locator('#st-pause-new').isChecked(), false,
+            JSON.stringify(await page.evaluate(() => ({ saved: window.__QA.snapshot().settings, active: document.activeElement?.id, keyboard: document.body.classList.contains('kbd') }))));
           // Blur number input before returning to fixed navigation (the mobile keyboard hides it).
           await page.locator('#st-stepdays').focus();
           if (variant.options.hasTouch) assert.equal(await page.locator('.tabbar').isVisible(), false);
