@@ -76,8 +76,6 @@ jobs:
   ios-safari:
     runs-on: macos-15
     timeout-minutes: 25
-    env:
-      LEXILOOP_BROWSER_OUT_DIR: ${{ runner.temp }}/ios-safari-results
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -94,7 +92,9 @@ jobs:
           devices = json.loads(subprocess.check_output(['xcrun', 'simctl', 'list', 'devices', 'available', '-j']))['devices']
           candidates = [d for runtime in sorted(devices, reverse=True) if '.iOS-' in runtime for d in devices[runtime] if d['name'].startswith('iPhone')]
           if not candidates: raise SystemExit('No available iOS Simulator; not a passing or skipped test')
-          with open(os.environ['GITHUB_ENV'], 'a') as f: f.write('LEXILOOP_SIMULATOR_ID=' + candidates[0]['udid'] + '\n')
+          with open(os.environ['GITHUB_ENV'], 'a') as f:
+              f.write('LEXILOOP_SIMULATOR_ID=' + candidates[0]['udid'] + '\n')
+              f.write('LEXILOOP_BROWSER_OUT_DIR=' + os.path.join(os.environ['RUNNER_TEMP'], 'ios-safari-results') + '\n')
           print(json.dumps(candidates[0]))
           PY
       - name: Boot Simulator and isolated fixture server
