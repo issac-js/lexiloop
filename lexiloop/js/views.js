@@ -2,23 +2,23 @@
  * views.js — 全部页面
  * 每个页面导出 render()（返回 HTML）与 bind()（挂载事件），由 app.js 调度。
  */
-import * as S from './store.js?v=108'
-import * as FSRS from './fsrs.js?v=108'
-import { CARD_TYPES, ENRICH_CONCURRENCY, RECOMMENDED_SETTINGS } from './config.js?v=108'
+import * as S from './store.js?v=109'
+import * as FSRS from './fsrs.js?v=109'
+import { CARD_TYPES, ENRICH_CONCURRENCY, RECOMMENDED_SETTINGS } from './config.js?v=109'
 import {
   esc, $, $$, toast, fail, ok, openModal, closeModal, confirmDialog,
   icon, LOGO_SVG, speak, fmtDateCN, relTime, STRENGTH_ZH, REGISTER_ZH,
   listEnVoices, getVoicePref, setVoicePref, getTheme, applyTheme,
-} from './ui.js?v=108'
-import * as AUTH from './cloud.js?v=108'
-import * as ENRICH from './enrich.js?v=108'
-import * as EXP from './exporter.js?v=108'
-import { parseImport, skippedLines, DEFAULT_MAX_WORDS } from './importer.js?v=108'
+} from './ui.js?v=109'
+import * as AUTH from './cloud.js?v=109'
+import * as ENRICH from './enrich.js?v=109'
+import * as EXP from './exporter.js?v=109'
+import { parseImport, skippedLines, DEFAULT_MAX_WORDS } from './importer.js?v=109'
 
 import {
   judgeTyped, reviewSemantics, looksLikeEnglishPhrase, cachedVerdict,
   HIT, ALT, WRONG, UNSURE,
-} from './judge.js?v=108'
+} from './judge.js?v=109'
 
 /* ═════════════════════════ 通用片段 ═════════════════════════ */
 
@@ -95,35 +95,24 @@ export function collocationBlock(c, opts) {
  */
 function goalCard() {
   const today = S.statsFor(S.todayKey())
-  const doneReviews = Number(today.total) || 0
+  const doneReviews = S.dailyReviewed()
   const doneNew = Number(today.new_words) || 0
-  const dailyMax = Number(S.state.settings.daily_max_review) || 50
+  const dailyMax = S.dailyReviewLimit()
   const isRest = S.isRestDay()
-  /* ★ 新学目标必须走 newAllowance()，不能直接读 daily_new。
-     历史 bug（2026-10-04 首次出现，2026-10-11 再次复发）：休息日时 newAllowance()
-     返回 0（不引新词），而这里仍拿 daily_new 当分母 → 目标环显示"新学 0 / 8 还差 8"，
-     下面的按钮却说"今天的任务完成了"。同一张卡上两个结论互相打脸，用户只会认为应用坏了。
-     同一规则**只允许有一个算法**：休息日额度为 0，分母就是 0，显示"今日休息"。
-     （store.js 的 newAllowance 注释里已经写过同样的教训，这里是那一处漏改的补刀。） */
-  const allow = S.newAllowance()
-  const goalNew = isRest ? 0 : Math.max(1, Number(S.state.settings.daily_new) || 20)
-  // 分母用"今日实际工作量"（已完成 + 还剩的），而不是 daily_max_review ——
-  // 否则词库小时进度环永远接近空，激励意义归零。
-  // ⚠ "还剩的新词"必须是**词数**：allow 是按词给的配额，
-  //   拿 newCards().length（卡数）去 min 它，两个单位不同的数放在一起算，
-  //   分母就会偏大 —— 进度环和"还差 N 个新词"都跟着飘。
-  const remaining = Math.min(S.dueCards().length, dailyMax) + Math.min(S.newWordCount(), allow)
-  const goalReviews = Math.max(1, Math.min(dailyMax, doneReviews + remaining))
+  // 进度环与达标判断共用预算、休息日和积压规则。
+  const gp = S.goalProgress()
+  const goalNew = gp.plan.newGoal
+  // 复习目标受每日总额度约束，新学仍按不同词数计。
+  const goalReviews = Math.min(dailyMax, Math.max(gp.plan.due, doneReviews))
   // 新学一项在休息日改说"今日休息"，不参与百分比：分母 0 会算出 NaN/Infinity，
   // 也会让"还差 8"这种根本做不到的指标继续挂在脸上。
   const rows = [
     { label: '复习', done: doneReviews, goal: goalReviews },
-    isRest
-      ? { label: '新学', done: doneNew, goal: 0, rest: true }
+    isRest || S.newWordsPaused()
+      ? { label: '新学', done: doneNew, goal: 0, rest: true, note: isRest ? '今日休息' : '先清理逾期复习' }
       : { label: '新学', done: doneNew, goal: goalNew },
   ]
   const R = 26, C = 2 * Math.PI * R
-  const gp = S.goalProgress()
   const gs = S.goalStats(30)
   const needTest = String(S.state.settings.goal_include_test) === 'true'
   const lastTest = Number(S.state.settings.last_test_at) || 0
@@ -135,8 +124,8 @@ function goalCard() {
      徽章却说"还差一次抽测" —— 同一张卡上两个数字互相矛盾，用户没法判断到底做完没有。
      现在三项等权：复习、新学、抽测（未启用抽测要求时只有前两项）。
      休息日不存在"新学"这一项，直接不纳入分母 —— 否则 0/0 会把环打成 NaN。 */
-  const parts = [Math.min(1, doneReviews / goalReviews)]
-  if (!isRest) parts.push(Math.min(1, doneNew / goalNew))
+  const parts = [goalReviews ? Math.min(1, doneReviews / goalReviews) : 1]
+  if (!isRest && !S.newWordsPaused()) parts.push(goalNew ? Math.min(1, doneNew / goalNew) : 1)
   if (needTest) parts.push(testDone ? 1 : 0)
   const pct = Math.round((parts.reduce((a, b) => a + b, 0) / parts.length) * 100)
 
@@ -159,9 +148,9 @@ function goalCard() {
     '<div class="grow">' +
     rows.map((r) => '<div class="row between" style="margin-bottom:5px;">' +
       '<span class="tiny">' + r.label + ' ' +
-      (r.rest ? '（休息日不安排）' : r.done + ' / ' + r.goal) + '</span>' +
+      (r.rest ? '（' + r.note + '）' : r.done + ' / ' + r.goal) + '</span>' +
       '<span class="tiny" style="color:' + ((r.rest || r.done >= r.goal) ? 'var(--ok)' : 'var(--ink-3)') + ';">' +
-      (r.rest ? '今日休息' : (r.done >= r.goal ? '达成' : '还差 ' + (r.goal - r.done))) + '</span></div>').join('') +
+      (r.rest ? r.note : (r.done >= r.goal ? '达成' : '还差 ' + (r.goal - r.done))) + '</span></div>').join('') +
     // 抽测单列一行：它是达标条件之一，不能藏在"还差一次抽测"六个字里 ——
     // 用户不知道它什么时候做、做了多久有效
     (needTest
@@ -941,6 +930,10 @@ export function renderToday() {
       ? (isRest
         ? '<p class="tiny center" style="margin:10px 0 0;">今天是休息日 —— 不引新词。' +
           '库里还有 <b>' + freshWords + '</b> 个没学的词，明天继续。</p>'
+        : S.newWordsPaused()
+          ? '<p class="tiny center" style="margin:10px 0 0;">还有 ' + S.overdueCards().length + ' 张跨日逾期卡，先复习；清理后自动恢复新词。</p>'
+        : !S.dailyReviewAllowance()
+          ? '<p class="tiny center" style="margin:10px 0 0;">已达到今日正式作答上限，新词留待明天。</p>'
         : '<p class="tiny center" style="margin:10px 0 0;">今日新词额度已学完 —— ' +
           '库里还有 <b>' + freshWords + '</b> 个没学的词，明天继续。</p>')
       : '') +
@@ -951,9 +944,9 @@ export function renderToday() {
         '已开始学习的词剩下的卡片待完成（不占今日新词额度）。</p>'
       : '') +
     '<button class="btn primary block lg" id="start-study" style="margin-top:14px;"' + (queueLen ? '' : ' disabled') + '>' +
-    (queueLen ? '开始学习（' + queueLen + ' 张）' : '今天的任务完成了') +
+    (queueLen ? '开始学习（' + queueLen + ' 张）' : !S.dailyReviewAllowance() ? '已达到今日作答上限' : '当前没有到期任务') +
     '</button>' +
-    (queueLen ? '' : '<p class="tiny center" style="margin:10px 0 0;">休息一下，或者去词库导入新词</p>') +
+    (queueLen ? '' : '<p class="tiny center" style="margin:10px 0 0;">' + (due ? '仍有 ' + due + ' 张到期卡保留在计划中，明天继续或在设置中调整上限。' : '短期巩固卡到期后会重新出现。') + '</p>') +
     '</div>' +
 
     '<div class="card tight">' +
@@ -1011,10 +1004,6 @@ export function bindToday(go) {
 }
 
 /* ═════════════════════════ 学习 ═════════════════════════ */
-
-/** 同一张卡在一次会话里最多被作答几次（1 次首答 + 2 次重试）。
- *  没有这个上限，答错的卡会被无限排回队尾，本轮永远结束不了。 */
-const MAX_CARD_RETRIES = 2
 
 const session = {
   queue: [],
@@ -1117,7 +1106,7 @@ export function sessionProgress() {
 export {
   normalizeAns, judgeTyped, looksLikeEnglishPhrase, reviewSemantics, cachedVerdict,
   clearJudgeCache, HIT, ALT, WRONG, UNSURE,
-} from './judge.js?v=108'
+} from './judge.js?v=109'
 
 const REG_ZH = { formal: '正式', neutral: '中性', spoken: '口语', informal: '非正式' }
 
@@ -1230,6 +1219,7 @@ export function buildChoices(word, kind, correct) {
 
 /** 依据作答结果给出建议评分：错→忘了；拼写错→吃力；对且快→很简单；对且慢→记得 */
 function suggestGrade() {
+  if (session.hinted === 'hard') return 1
   const a = session.answered
   if (!a) return null
   // 合理替代表达（alt）：英语是对的，不能给 1（那等于说用户答错了）。
@@ -1244,13 +1234,12 @@ function suggestGrade() {
   if (a.typo) return 2
   const secs = (Date.now() - (session.cardShownAt || Date.now())) / 1000
   const base = secs <= 8 ? 4 : 3
-  // 听过/看过答案：建议分要和实际落库一致（applyGrade 会把 3/4 压到 2），
-  // 否则按钮高亮 4、实际记 2，用户会觉得"系统骗我"
-  return session.hinted === 'hard' ? Math.min(base, 2) : base
+  return base
 }
 
 export function renderStudy() {
   if (!session.total && !session.queue.length) resetSession()
+  if (!S.isTestSession() && !S.dailyReviewAllowance()) session.queue = []
 
   if (!session.queue.length) {
     const today = S.statsFor(S.todayKey())
@@ -1312,8 +1301,8 @@ export function renderStudy() {
     return (
       '<h1 class="page">学习</h1>' +
       '<div class="empty"><div class="big">' +
-      (session.graded ? '本次学习完成' : '今天的复习任务完成了') + '</div>' +
-      '<p class="tiny">今日已复习 ' + today.total + ' 次' +
+      (!S.dailyReviewAllowance() ? '已达到今日作答上限' : session.graded ? '本次学习完成' : '当前没有到期任务') + '</div>' +
+      '<p class="tiny">今日已正式作答 ' + S.dailyReviewed() + ' 次' +
       (today.new_words ? '，新学 ' + today.new_words + ' 个词' : '') + '</p>' +
       '<div class="btn-group" style="justify-content:center;margin-top:18px;">' +
       '<button class="btn soft" id="study-again">重新检查一遍</button>' +
@@ -1501,7 +1490,7 @@ export function renderStudy() {
     : ''
 
   const gradeButtons = FSRS.GRADES.map((g) => {
-    const pv = FSRS.preview(card, g.grade, Date.now(), Number(S.state.settings.target_retention) || 0.9, undefined, {
+    const pv = FSRS.preview(card, session.hinted === 'hard' ? 1 : g.grade, Date.now(), Number(S.state.settings.target_retention) || 0.9, undefined, {
       minutes: Number(S.state.settings.learn_step_minutes) || 10,
       days: Number(S.state.settings.learn_step_days) || 1,
     })
@@ -1633,7 +1622,7 @@ export function bindStudy(go, onChanged) {
 
   const reveal = $('#reveal')
   if (reveal) reveal.onclick = () => {
-    // 没尝试作答就揭晓 = 硬提示：这次不算成功提取，评分会被封顶到 2
+    // 没尝试作答就揭晓 = 硬提示：这次不算成功提取，按忘了处理
     session.hinted = 'hard'
     session.shown = true
     session.cardShownAt = Date.now()
@@ -1828,8 +1817,9 @@ export function bindStudy(go, onChanged) {
   $$('[data-g]').forEach((btn) => {
     btn.onclick = async () => {
       const card = session.queue[0]
-      const grade = Number(btn.dataset.g)
+      let grade = Number(btn.dataset.g)
       if (!card) return
+      if (!S.isTestSession() && !S.dailyReviewAllowance()) { onChanged(); return }
       // 防误触：评分后页面会整块重绘，新按钮就位时用户的双击/连击可能正好落在
       // 下一张卡上 —— 新卡还没看就被评了分，还会被写进 FSRS。
       if (Date.now() < (session.answerReadyAt || 0)) return
@@ -1840,6 +1830,8 @@ export function bindStudy(go, onChanged) {
         status: card.status, due: card.due,
       }
       const res = S.applyGrade(card, grade, { hinted: session.hinted })
+      grade = res.log.grade
+      const eventId = session.eventId || S.newEventId()
       if (session.hinted) session.hintedCount = (session.hintedCount || 0) + 1
       // 判分维度跟着日志一起落库，否则"待复核有多少""多少分靠提示拿到"永远算不出来
       const ans = session.answered
@@ -1922,33 +1914,19 @@ export function bindStudy(go, onChanged) {
       session.assistShown = false
       session.interactive = null
 
-      // 忘了的词排到队尾，本次会话内再出现一次。
-      // 但同一张卡最多重试 2 次：不加限制时用户会陷在"一直答错同一张卡"里出不来，
-      // 队列没有终点、进度条也不动 —— 那是最让人想直接关掉应用的状态。
-      // 另外：只有当本轮**后面还有别的计划内卡片**时才重排。
-      // 否则「计划 1 张」的轮次答错后就是原地反复问同一题（用户实测的"无限答下去"）；
-      // 卡本身已经按"忘了"排进学习步骤，过一会儿自然会回来，不需要当场硬问。
-      if (grade === 1) {
-        const done = session.tries.get(card.id) || 0
-        if (!morePlanned) {
-          toast('这张已按"忘了"排进复习计划，本次不再重复', 'ok')
-        } else if (done <= MAX_CARD_RETRIES) {
-          session.queue.push(card)
-        } else {
-          toast('这张卡本次已重试 ' + done + ' 次，留给下次复习', 'ok')
-        }
-      }
+      // 尊重调度器的 10 分钟重学间隔，不把尚未到期的错卡立即塞回当前队列。
+      if (grade === 1) toast('这张卡已安排 10 分钟后重学，本轮不提前重复', 'ok')
 
       onChanged()
 
       try {
         // 写库统一走 store 层，避免时间字段格式在多个地方各写一遍。
         // 走服务端函数：日志与调度在同一个事务里落地，且测试模式不会改调度。
-        await S.recordReview(log, card, { eventId: session.eventId, isTest: S.isTestSession() })
+        await S.recordReview(log, card, { eventId, isTest: S.isTestSession() })
         S.pullStats().then(() => S.saveLocal()).catch(() => {})
       } catch (e) {
         // 补写也要带上同一个 eventId 与测试标记，否则重放会重复计分或污染调度
-        S.queueReview(log, card, { eventId: session.eventId, isTest: S.isTestSession() })
+        S.queueReview(log, card, { eventId, isTest: S.isTestSession() })
         toast('网络异常，已存在本地，稍后自动同步', 'err')
       }
     }
@@ -3394,7 +3372,7 @@ export function renderMe() {
     '<div class="card-head"><h2>学习节奏</h2></div>' +
     '<div class="field"><label for="st-new">每日新学词数（个）</label>' +
     '<input class="input" type="number" min="0" max="200" id="st-new" value="' + esc(s.daily_new) + '"></div>' +
-    '<div class="field"><label for="st-max">每日复习上限（张）</label>' +
+    '<div class="field"><label for="st-max">每日正式作答上限（次，含新学、重试和练习计入）</label>' +
     '<input class="input" type="number" min="0" max="2000" id="st-max" value="' + esc(s.daily_max_review) + '"></div>' +
     '<div class="field"><label for="st-ret">目标留存率 <span id="ret-val" class="tiny">' +
     Math.round(Number(s.target_retention) * 100) + '%</span></label>' +
@@ -3403,8 +3381,12 @@ export function renderMe() {
     '<p class="tiny" id="ret-hint" style="margin:6px 0 0;"></p></div>' +
     '<div class="field"><label for="st-stepmin">新卡巩固间隔（分钟，第一次想起来后隔多久再见）</label>' +
     '<input class="input" type="number" min="1" max="120" id="st-stepmin" value="' + esc(Number(s.learn_step_minutes) || 10) + '"></div>' +
-    '<div class="field"><label for="st-stepdays">新卡次日间隔（天，第二次想起来后隔几天）</label>' +
+    '<div class="field"><label for="st-stepdays">新卡跨日复习间隔（天，推荐 1 天）</label>' +
     '<input class="input" type="number" min="1" max="7" id="st-stepdays" value="' + esc(Number(s.learn_step_days) || 1) + '"></div>' +
+    '<p class="tiny">新卡先成功回忆，再于巩固间隔后成功回忆，之后安排跨日复习。忘了重新巩固；吃力不推进阶段。修改设置只影响后续评分，不重排已有到期日。</p>' +
+    '<label class="row" style="gap:8px;align-items:center;margin:4px 0 8px;">' +
+    '<input type="checkbox" id="st-pause-new"' + (String(s.pause_new_when_overdue) !== 'false' ? ' checked' : '') + '>' +
+    '<span class="tiny">有跨日逾期复习时暂停新词，清理后自动恢复（推荐）</span></label>' +
     (function () {
       const decks = Array.from(new Set(S.state.cards.map((c) => c.deck).filter(Boolean)))
       if (decks.length < 2) return ''
@@ -3438,9 +3420,9 @@ export function renderMe() {
     '<button class="btn primary block" id="st-save">保存设置</button>' +
     '<button class="btn soft block" id="st-recommend" style="margin-top:8px;">用推荐设置（一键还原）</button>' +
     '<p class="tiny" style="margin:8px 0 0;">推荐值：' +
-    RECOMMENDED_SETTINGS.daily_new + ' 新词 / ' + RECOMMENDED_SETTINGS.daily_max_review + ' 复习上限 / 留存 ' +
+    RECOMMENDED_SETTINGS.daily_new + ' 新词 / ' + RECOMMENDED_SETTINGS.daily_max_review + ' 次正式作答上限 / 留存 ' +
     Math.round(RECOMMENDED_SETTINGS.target_retention * 100) + '% / 巩固 ' + RECOMMENDED_SETTINGS.learn_step_minutes +
-    ' 分 / 次日 ' + RECOMMENDED_SETTINGS.learn_step_days + ' 天 · 达标含抽测 · 周日休息 · 练习自动写入。跨设备同步，电脑手机一致。</p>' +
+    ' 分 / 跨日 ' + RECOMMENDED_SETTINGS.learn_step_days + ' 天 · 积压时暂停新词 · 达标含抽测 · 周日休息 · 练习自动写入。跨设备同步，电脑手机一致。</p>' +
     '</div>' +
 
     '<div class="card">' +
@@ -3786,6 +3768,7 @@ export function bindMe(onChanged, go, onSignOut) {
     S.state.settings.target_retention = Number($('#st-ret').value) / 100
     S.state.settings.learn_step_minutes = Math.min(120, Math.max(1, Number($('#st-stepmin').value) || 10))
     S.state.settings.learn_step_days = Math.min(7, Math.max(1, Number($('#st-stepdays').value) || 1))
+    S.state.settings.pause_new_when_overdue = !!$('#st-pause-new').checked
     S.state.settings.queue_interleave = Math.min(20, Math.max(1, Number($('#st-interleave').value) || 4))
     S.state.settings.deck_filter = ($('#st-deck') && $('#st-deck').value) || ''
     S.state.settings.auto_credit = !!($('#st-autocredit') && $('#st-autocredit').checked)

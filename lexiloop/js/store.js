@@ -5,9 +5,9 @@
  * 再异步推到云端；换设备登录时从云端整体拉回。单用户跨设备不会并发改同一张卡，
  * 因此采用「以云端为权威 + 本地乐观更新」的简单模型。
  */
-import { db, getSession } from './cloud.js?v=108'
-import { LS_KEYS, DEFAULT_SETTINGS } from './config.js?v=108'
-import * as FSRS from './fsrs.js?v=108'
+import { db, getSession } from './cloud.js?v=109'
+import { LS_KEYS, DEFAULT_SETTINGS } from './config.js?v=109'
+import * as FSRS from './fsrs.js?v=109'
 
 export const state = {
   booted: false,
@@ -345,6 +345,7 @@ export async function pushSettings() {
       learn_step_minutes: Number(state.settings.learn_step_minutes) || 10,
       learn_step_days: Number(state.settings.learn_step_days) || 1,
       queue_interleave: Number(state.settings.queue_interleave) || 4,
+      pause_new_when_overdue: String(state.settings.pause_new_when_overdue) !== 'false',
     }),
   }
   const res = await db().from('settings').upsert(row, { onConflict: 'owner_id' })
@@ -1117,10 +1118,14 @@ export function ensureDayPlan() {
 
 export function goalProgress() {
   const today = todayKey()
-  const plan = ensureDayPlan()
+  const basePlan = ensureDayPlan()
   const st = statsFor(today)
-  const doneReview = Number(st.total) || 0
+  const doneReview = dailyReviewed()
   const doneNew = Number(st.new_words) || 0
+  const plan = Object.assign({}, basePlan, {
+    due: Math.min(basePlan.due, dailyReviewLimit()),
+    newGoal: newWordsPaused() ? doneNew : Math.min(basePlan.newGoal, doneNew + dailyReviewAllowance()),
+  })
   const reviewMet = plan.due === 0 || doneReview >= plan.due
   const newMet = plan.newGoal === 0 || doneNew >= plan.newGoal
   // 可选：把"本周做过一次抽测"也纳入达标条件
@@ -1168,8 +1173,53 @@ export function statsFor(dateKey) {
   return row || { reviewed_on: dateKey, total: 0, correct: 0, new_words: 0, minutes: 0 }
 }
 
-export function newIntroducedToday() {
-  return Number(statsFor(todayKey()).new_words) || 0
+export function newIntroducedToday(now = Date.now()) {
+  return Number(statsFor(todayKey(new Date(now))).new_words) || 0
+}
+
+/** 正式作答按次累计，含新学、重试、练习计入；审计/测试作答不占额度。
+ * 本地高水位防止 RPC 统计延迟、重进队列或刷新重置额度；同步后取云端与本地较大值。
+ * 跨设备同时作答仍需服务端原子限额才能严格约束，这里不声称提供该保证。 */
+const reviewUsage = new Map()
+function usageKey(now) {
+  const owner = String((state.user && state.user.id) || state.accountEmail || 'local')
+  return 'lexiloop.review-usage.v1.' + encodeURIComponent(owner) + '.' + todayKey(new Date(now))
+}
+
+export function dailyReviewLimit() {
+  const value = Number(state.settings.daily_max_review)
+  return Number.isFinite(value) && value >= 0 ? Math.floor(value) : DEFAULT_SETTINGS.daily_max_review
+}
+
+export function dailyReviewed(now = Date.now()) {
+  const key = usageKey(now)
+  let saved = 0
+  try { saved = Number(localStorage.getItem(key)) || 0 } catch (e) { /* 内存兜底 */ }
+  const total = Math.max(0, Number(statsFor(todayKey(new Date(now))).total) || 0, saved, reviewUsage.get(key) || 0)
+  reviewUsage.set(key, total)
+  return total
+}
+
+export function dailyReviewAllowance(now = Date.now()) {
+  return Math.max(0, dailyReviewLimit() - dailyReviewed(now))
+}
+
+function countReview(now) {
+  const key = usageKey(now)
+  const total = dailyReviewed(now) + 1
+  reviewUsage.set(key, total)
+  try { localStorage.setItem(key, String(total)) } catch (e) { /* 内存兜底 */ }
+}
+
+/** 跨日积压：今天零点以前已到期的可学卡；今天刚到期的卡不触发暂停。 */
+export function overdueCards(now = Date.now()) {
+  const start = new Date(now)
+  start.setHours(0, 0, 0, 0)
+  return dueCards(now).filter((c) => new Date(c.due).getTime() < start.getTime())
+}
+
+export function newWordsPaused(now = Date.now()) {
+  return String(state.settings.pause_new_when_overdue) !== 'false' && overdueCards(now).length > 0
 }
 
 /** 休息日（默认周日 = 0）：只复习、不引新词，留一天做整合与抽测。
@@ -1192,8 +1242,8 @@ export function isRestDay(now) {
  *  而 tab 徽章与「今日」页调的是本函数、没判 → 周日明明不出新词，
  *  界面却提示「还有 8 个单词待学习」。同一规则两套算法，UI 与行为必然对不上。 */
 export function newAllowance(now) {
-  if (isRestDay(now)) return 0
-  return Math.max(0, (Number(state.settings.daily_new) || 0) - newIntroducedToday())
+  if (isRestDay(now) || newWordsPaused(now)) return 0
+  return Math.min(dailyReviewAllowance(now), Math.max(0, (Number(state.settings.daily_new) || 0) - newIntroducedToday(now)))
 }
 
 /** 当前学习范围（词单过滤）：空串 = 全部词单 */
@@ -1282,10 +1332,10 @@ export function weakCards(minLapses) {
 export function buildWeakQueue(now) {
   const t = now || Date.now()
   const weak = weakCards(2).slice(0, 20)
-  if (weak.length >= 20) return weak
+  if (weak.length >= 20) return weak.slice(0, dailyReviewAllowance(t))
   const seen = new Set(weak.map((c) => c.id))
   const rest = dueCards(t).filter((c) => !seen.has(c.id))
-  return weak.concat(rest.slice(0, 20 - weak.length))
+  return weak.concat(rest.slice(0, 20 - weak.length)).slice(0, dailyReviewAllowance(t))
 }
 
 /** status 还是 'new' 的**卡片**（按张计）。底层口径，不要直接拿它当"还有几个新词"。 */
@@ -1342,7 +1392,7 @@ export function leftoverNewCards() {
  *  与复习卡共用同一个每日工作量上限：正常情况只剩个位数，
  *  但用户长期中途退出时这批卡会越攒越多，不设上限队列就没有终点。 */
 export function leftoverQuota() {
-  return Number(state.settings.daily_max_review) || 200
+  return dailyReviewAllowance()
 }
 
 /** 稳定哈希打散：同一个 id 每次得到的顺序一致，刷新页面不会换来换去 */
@@ -1380,7 +1430,9 @@ function separateSameWord(list) {
 
 export function buildQueue(now) {
   const t = now || Date.now()
-  const review = dueCards(t).slice(0, Number(state.settings.daily_max_review) || 200)
+  const quota = dailyReviewAllowance(t)
+  if (!quota) return []
+  const review = dueCards(t).slice(0, quota)
   // 休息日（默认周日）：只复习，不引新词 —— 留一天做整合与抽测。
   // 额度统一由 newAllowance() 给出（它内部已判休息日），此处不要再单独判断，
   // 否则又会出现"队列不出新词、界面却提示待学习"的错位。
@@ -1436,8 +1488,8 @@ export function buildQueue(now) {
   // leftover 排最后：它们是补课，不是今天的配额。
   const newPick = firstCards.concat(extraCards).concat(leftover)
 
-  if (!newPick.length) return separateSameWord(review)
-  if (!review.length) return separateSameWord(newPick)
+  if (!newPick.length) return separateSameWord(review).slice(0, quota)
+  if (!review.length) return separateSameWord(newPick).slice(0, quota)
 
   const out = []
   let ri = 0
@@ -1449,7 +1501,7 @@ export function buildQueue(now) {
     if (ni < newPick.length) out.push(newPick[ni++])
     else if (ri < review.length) out.push(review[ri++])
   }
-  return separateSameWord(out)
+  return separateSameWord(out).slice(0, quota)
 }
 
 /* ───────────────────────── 复习 ───────────────────────── */
@@ -1459,14 +1511,16 @@ export function buildQueue(now) {
  * @param {object} card
  * @param {number} grade 1..4
  * @param {{hinted?:'hard'|'soft'}} [opts] hinted=先看了答案：
- *   'hard' 表示没尝试作答就揭晓 —— 这不算成功提取，评分封顶 2；
+ *   'hard' 表示没尝试作答就揭晓 —— 这不算成功提取，按 1（忘了）处理；
  *   'soft' 表示作答后再看答案核对 —— 只记录，不降级。
  */
 export function applyGrade(card, grade, opts) {
   const now = Date.now()
   const o = opts || {}
+  const isTest = o.isTest === true || state.testSession === true
+  if (!isTest && !dailyReviewAllowance(now)) throw new Error('已达到今日正式作答上限；到期卡片保留，明天继续。')
   let g = grade
-  if (o.hinted === 'hard' && g >= 3) g = 2
+  if (o.hinted === 'hard') g = 1
   const retention = Number(state.settings.target_retention) || 0.9
   const steps = {
     minutes: Number(state.settings.learn_step_minutes) || 10,
@@ -1481,7 +1535,7 @@ export function applyGrade(card, grade, opts) {
      （到期日改变、待办任务数变少），直到刷新才被服务端覆盖，
      与横幅承诺的「不影响学习进度」直接矛盾（2026-10-10 外部复测指出）。
      log 里的 prev/next_state 仍完整，服务端凭它决定是否落库。 */
-  if (state.testSession === true) {
+  if (isTest) {
     const before = Object.assign({}, card)
     Object.assign(card, result.card)
     Object.keys(card).forEach((k) => { if (!(k in before)) delete card[k] })
@@ -1490,6 +1544,8 @@ export function applyGrade(card, grade, opts) {
   }
 
   Object.assign(card, result.card)
+  countReview(now)
+  saveLocal()
   try { markGoalIfMet() } catch (e) { /* 达标记账失败不影响评分 */ }
   return result
 }
@@ -1525,11 +1581,12 @@ export async function creditGrades(list, opts) {
   let n = 0
   let asked = 0
   for (const it of list || []) {
+    if (!isTest && !dailyReviewAllowance()) break
     const card = state.cards.find((c) => c.word_id === it.id)
     if (!card) continue
     asked++
     const grade = typeof it.grade === 'number' ? it.grade : gradeFromPerformance(it.ok, it.ms)
-    const res = applyGrade(card, grade)
+    const res = applyGrade(card, grade, { isTest })
     // 三个新维度跟着日志一起落库：判分结论（命中/替代/待复核）、是否用了提示、
     // 是否靠选项辅助。没有它们，"待复核有多少"和"多少分是提示帮忙拿的"永远算不出来。
     const log = Object.assign({}, res.log, {

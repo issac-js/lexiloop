@@ -15,7 +15,7 @@
  * 评级 grade：1 = Again（忘了）2 = Hard（很吃力）3 = Good（想起来了）4 = Easy（秒答）
  *
  * 已知简化（明示，不隐藏）：
- *   学习步骤只有两段（10 分钟 / 1 天），不做可配置的阶梯；这是刻意的简化。
+ *   学习步骤只有两段（默认 10 分钟 / 1 天），按状态推进，不用总作答次数代替成功巩固。
  *   同日重复复习用 FSRS-5 的短期项（w17/w18）单独处理，不做短期与长期的加权融合；
  *   影响只落在"同一天内的第二次及以后复习"上（2026-10-09 修正：此前这一档会退化成
  *   稳定度完全不增长，因为长期公式在 R≈1 时增长因子恒为 0）。
@@ -135,14 +135,21 @@ function normalizeSteps(s) {
  * 学习步骤：新卡前几次"想起来了"给短间隔（默认 10 分钟与 1 天），之后交给 FSRS 按天排期。
  * 理由：新词第一次接触就丢到几天后，第二次见面基本已经忘了，等于白学一次。
  */
-function dueAfter(state, grade, now, retention, w, reps, steps) {
-  if (grade === 1) return now + RELEARN_MINUTES * 60000
+function learningSchedule(card, isNew, grade, now, retention, stability, steps) {
   const st = normalizeSteps(steps)
-  const r = Number(reps) || 0
-  if (r <= 1) return now + st.minutes * 60000
-  if (r === 2) return now + st.days * MS_PER_DAY
-  const days = Math.max(1, Math.round(intervalForRetention(state.stability, retention)))
-  return now + days * MS_PER_DAY
+  if (grade === 1) return { status: 'relearning', due: now + RELEARN_MINUTES * 60000 }
+  const status = isNew ? 'new' : card.status
+  if (status !== 'review') {
+    // 吃力不推进学习阶段；忘了由上面的分支重置。reps 仍只记录总作答次数。
+    if (grade === 2) return {
+      status: status === 'learning' ? 'learning' : 'relearning',
+      due: now + st.minutes * 60000,
+    }
+    if (status === 'learning') return { status: 'review', due: now + st.days * MS_PER_DAY }
+    return { status: 'learning', due: now + st.minutes * 60000 }
+  }
+  const days = Math.max(1, Math.round(intervalForRetention(stability, retention)))
+  return { status: 'review', due: now + days * MS_PER_DAY }
 }
 
 /**
@@ -175,13 +182,11 @@ export function preview(card, grade, now = Date.now(), retention = 0.9, w = DEFA
   const next = {
     stability,
     difficulty,
-    status: grade === 1 ? 'relearning' : isNew ? 'learning' : 'review',
+    ...learningSchedule(card, isNew, grade, now, retention, stability, steps),
   }
-  const due = dueAfter(next, grade, now, retention, w, (card && Number(card.reps) || 0) + 1, steps)
   return {
     ...next,
-    due,
-    intervalDays: Math.max(0, (due - now) / MS_PER_DAY),
+    intervalDays: Math.max(0, (next.due - now) / MS_PER_DAY),
   }
 }
 
