@@ -91,36 +91,70 @@ export function buildPlan(pool, onDate = dayKey()) {
   return { recall, choices, topic: picked.find((w) => w.topic)?.topic || '', picked }
 }
 
-/** Fixed, offline-capable workplace information-retention practice (not a cognitive diagnostic test). */
+/** Deterministic, offline workplace information retention; not a clinical cognition score.
+ * Date-specific combinations vary people, places, times and tasks to limit rote recall.
+ * Each choice is unambiguous and its correct answer appears verbatim in the passage. */
 export function memoryTask(date = dayKey()) {
-  const examples = [
-    {
-      passage: 'A student calls from the library lobby at 3:10 PM. She lost a blue umbrella and wants to know where to report it. The officer advises contacting the campus lost-and-found desk.',
+  const stamp = String(date)
+  const parsed = Date.parse(stamp + 'T00:00:00Z')
+  const day = Number.isFinite(parsed) ? Math.floor(parsed / 86400000) : 0
+  const times = ['9:40 AM', '11:25 AM', '3:10 PM', '6:15 PM', '8:35 PM']
+  const locations = ['library lobby', 'east gate', 'sports centre lobby', 'administration building entrance', 'student centre']
+  const lostItems = ['a blue umbrella', 'a black backpack', 'a silver water bottle', 'a pair of glasses', 'a green notebook']
+  const buildings = ['Administration Building', 'Science Building', 'Student Centre', 'Library', 'Sports Centre']
+  const forgottenItems = ['student ID', 'access card', 'visitor badge', 'appointment confirmation', 'registration email']
+  const pick = (pool, label) => pool[hash(stamp + '|' + label) % pool.length]
+  const time = pick(times, 'time')
+  const location = pick(locations, 'location')
+  const choice = (correct, pool, label) => {
+    const others = pool.filter((v) => v !== correct)
+    const start = hash(stamp + '|' + label + '|distractors') % others.length
+    const all = [correct, others[start], others[(start + 1) % others.length]]
+    const rotation = hash(stamp + '|' + label + '|position') % all.length
+    const options = all.slice(rotation).concat(all.slice(0, rotation))
+    return { options, correct: options.indexOf(correct) }
+  }
+  const where = {
+    prompt: 'Where is the caller?',
+    ...choice(location, locations, 'where'),
+  }
+  const when = {
+    prompt: 'When did the call happen?',
+    ...choice(time, times, 'when'),
+  }
+
+  if ((day % 3 + 3) % 3 === 0) {
+    const item = pick(lostItems, 'lost-item')
+    return {
+      passage: 'A student calls from the ' + location + ' at ' + time +
+        '. She lost ' + item + ' and asks how to report it. The officer advises contacting the campus lost-and-found desk.',
       questions: [
-        { prompt: 'What did the student lose?', options: ['A blue umbrella', 'A red backpack', 'A phone'], correct: 0 },
-        { prompt: 'Where is the student calling from?', options: ['The east gate', 'The library lobby', 'The sports centre'], correct: 1 },
-        { prompt: 'When did the call happen?', options: ['9:40 AM', '6:15 PM', '3:10 PM'], correct: 2 },
+        { prompt: 'What did the student lose?', ...choice(item, lostItems, 'lost-item') },
+        where, when,
       ],
-    },
-    {
-      passage: 'A visitor phones from the east gate at 9:40 AM. He has an appointment in the Administration Building and asks which entrance to use. The officer says to follow the visitor registration instructions.',
+    }
+  }
+  if ((day % 3 + 3) % 3 === 1) {
+    const building = pick(buildings, 'building')
+    return {
+      passage: 'A visitor calls from the ' + location + ' at ' + time +
+        '. He has an appointment in the ' + building + ' and asks which entrance to use. The officer explains the visitor registration process.',
       questions: [
-        { prompt: 'Where is the caller?', options: ['The library', 'The east gate', 'The cafeteria'], correct: 1 },
-        { prompt: 'Which building does he need?', options: ['Administration Building', 'Sports Centre', 'Science Building'], correct: 0 },
-        { prompt: 'When did he phone?', options: ['6:15 PM', '3:10 PM', '9:40 AM'], correct: 2 },
+        where,
+        { prompt: 'Which building does the visitor need?', ...choice(building, buildings, 'building') },
+        when,
       ],
-    },
-    {
-      passage: 'A student is on the second floor of the sports centre at 6:15 PM. She forgot her student ID and cannot enter a restricted area. The officer recommends contacting the authorised access support desk.',
-      questions: [
-        { prompt: 'Which floor is the student on?', options: ['Ground floor', 'Second floor', 'Fifth floor'], correct: 1 },
-        { prompt: 'What did she forget?', options: ['Her student ID', 'Her umbrella', 'Her notebook'], correct: 0 },
-        { prompt: 'What time is it?', options: ['6:15 PM', '3:10 PM', '9:40 AM'], correct: 0 },
-      ],
-    },
-  ]
-  const day = Number(String(date).slice(-2)) || 1
-  return examples[(day - 1) % examples.length]
+    }
+  }
+  const item = pick(forgottenItems, 'forgotten-item')
+  return {
+    passage: 'A student calls from the ' + location + ' at ' + time +
+      '. She forgot her ' + item + ' and needs help accessing a restricted campus area. The officer directs her to the authorised access support desk.',
+    questions: [
+      { prompt: 'What did the student forget?', ...choice(item, forgottenItems, 'forgotten-item') },
+      where, when,
+    ],
+  }
 }
 
 export function summarizeSession(session) {
