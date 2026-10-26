@@ -73,7 +73,7 @@ jobs:
           (cd dist && sha256sum -c -- *.zip.sha256)
           python - <<'PY'
           from pathlib import Path
-          import json, os, zipfile
+          import hashlib, json, os, zipfile
           from tools.release_bundle import PUBLIC_FILES
           source = os.environ['SOURCE_SHA']
           with zipfile.ZipFile(Path('dist') / ('lexiloop-' + source + '.zip')) as bundle:
@@ -81,7 +81,9 @@ jobs:
               assert manifest['source_sha'] == source
               assert sorted(manifest['files']) == sorted(PUBLIC_FILES)
               assert sorted(bundle.namelist()) == sorted([*PUBLIC_FILES, 'release.json'])
-          print('Verified full SHA and exact public file allowlist.')
+              for filename, expected in manifest['files'].items():
+                  assert hashlib.sha256(bundle.read(filename)).hexdigest() == expected
+          print('Verified full SHA, exact public file allowlist, and each resource SHA256.')
           PY
 
       - name: Publish SHA-pinned pre-release assets
