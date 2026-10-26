@@ -39,7 +39,7 @@ python -B tools/release_bundle.py --sha FULL_SHA
 
 FULL_SHA 必须是这个 checkout 的完整提交 SHA，不可随意填写。打包命令仅校验
 SHA 格式，不证明工作区未修改；自动 CI 以固定 SHA checkout 保证来源对应。
-ZIP 内的 release.json 记录 source_sha、app_version 和 22 个公开资源的 SHA-256。
+ZIP 内的 release.json 记录 source_sha、app_version 和 24 个公开资源的 SHA-256（自 v110 起）。
 它是版本标记，不是数字签名；不要把发布包放入 Git。
 
 ### Windows 换行与来源一致性
@@ -139,7 +139,7 @@ GitHub 端可检查、修复、提交 PR 和打包；WorkBuddy 端负责接收�
 准备原应用目录，等待当轮发布授权后更新正式站点，再返回提交 SHA、URL 和验收结果。
 暂不配置定时任务、本机 runner 或额外 OAuth 应用。
 
-仍需首次授权发布来验证：release.json 是否被托管、22 个资源是否一致、
+仍需首次授权发布来验证：release.json 是否被托管、全部已列入 PUBLIC_FILES 的资源是否一致、
 缓存刷新、多文件整体切换、浏览器 Service Worker 更新及静态回滚方式。
 源代码审阅、离线 CI 和资源哈希不能替代登录、同步、模型与数据权限实测。
 
