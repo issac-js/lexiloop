@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-GitHub 自动离线检查和发布包已配置并已在 GitHub Actions 成功运行。
+GitHub 自动离线检查、SHA 固定发布打包与私有仓库 GitHub Releases 交付通道已配置。自动创建 release 只负责归档文件，不发布 WorkBuddy 网站。
 根据用户于 2026-10-19 转回的原 WorkBuddy 项目核查报告，当前项目只能在 WorkBuddy
 会话内使用 `workbuddy_sites_deploy` 更新发布，并要求用户在发布当轮明确说“发布”。
 该报告称未提供 GitHub 自动部署、外部发布 API/CLI 或部署 webhook；本仓库维护端
@@ -14,18 +14,18 @@ GitHub 自动离线检查和发布包已配置并已在 GitHub Actions 成功运
 ## 检查和固定发布来源
 
 1. 在独立分支修复应用并用 `tools/bump_version.py` 更新版本。
-2. 提交 PR，确认 `LexiLoop checks and release bundle` 的 `check`、`browser`、`ios-safari` 对同一最终提交全部成功。后两项为隔离夹具浏览器和 Simulator 测试，边界见 [浏览器复测说明](../tools/README-browser-checks.md)。
-3. 审核后合并到 main；等待 main 的检查成功。
-4. 从该次 main 检查下载 `lexiloop-FULL_SHA` artifact，保存 ZIP 和 SHA-256 文件。
+2. 提交 PR，确认 `LexiLoop checks and release bundle` 的 `check`、`browser`、`ios-safari` 对同一最终提交全部成功。后两项为隔离夹具浏览器和 Simulator 测试，边界见 [浏览器复测说明](../tools/README-browser-checks.md)。**Actions artifact 附件上传为非阻塞（最佳努力）**：测试必须通过，但存储配额告警不再阻断实际测试结果。
+3. 审核后合并到 main；等待 main 的全部检查成功。
+4. `Publish verified LexiLoop release archive` 工作流仅在 **main 上的完整 CI 成功后**才运行；核实 main 提交 SHA、重新做离线检查、生成 ZIP+SHA256，并发布至私有仓库 GitHub Releases 的 **pre-release**。从该次 release 下载 ZIP 和 SHA-256 文件。旧版 main Actions artifact 也可用，但不可将缺失的附件解释为文件已经交付。
 5. WorkBuddy 先读取并核对发布说明，准备 ZIP 中的文件，保留原应用绑定配置。
    收到用户在当轮明确的“发布”指令后，使用原 `lexiloop/` 对应的应用目录更新现有应用；
    不另建临时应用，不以其他目录猜测目标。ZIP 解压后不再套 lexiloop 子目录。
    发布资源中不含 server.py、tools、报告、环境文件或仓库根目录。
 6. 保留上一份已验收的 ZIP、摘要和 SHA，以便静态代码回滚。
 
-GitHub PR 的发布包标记 PR 源提交，合并后的发布包标记 main 提交；实际部署 main 的包。
-私有仓库的 Actions 执行额度和 artifact 保留期受账户设置影响；本工作流保留产物 14 天，
-长期回滚包需由部署端另行保存。新增公开静态资源时需更新 `PUBLIC_FILES` 白名单。
+GitHub PR 和 main 的 CI 都构建基于真实来源 SHA 的发布包；长期可下载的最终交付物是经 CI 成功后由独立工作流创建的 main GitHub pre-release。WorkBuddy 只部署该 main SHA 对应的包，绝不使用 PR SHA 的包。
+私有仓库的 Actions 执行额度和 artifact 保留期受账户设置影响；CI 附件上传可能因额度而失败，其错误为非阻塞，但正式 pre-release ZIP/校验文件必须成功上传才算具备部署条件。
+长期回滚包仍需由部署端另行保存；清理脚本不删除正式 release ZIP。新增公开静态资源时需更新 `PUBLIC_FILES` 白名单。
 
 ## 本地复现
 
@@ -39,7 +39,7 @@ python -B tools/release_bundle.py --sha FULL_SHA
 
 FULL_SHA 必须是这个 checkout 的完整提交 SHA，不可随意填写。打包命令仅校验
 SHA 格式，不证明工作区未修改；自动 CI 以固定 SHA checkout 保证来源对应。
-ZIP 内的 release.json 记录 source_sha、app_version 和 22 个公开资源的 SHA-256。
+ZIP 内的 release.json 记录 source_sha、app_version 和 24 个公开资源的 SHA-256（自 v110 起）。
 它是版本标记，不是数字签名；不要把发布包放入 Git。
 
 ### Windows 换行与来源一致性
@@ -139,7 +139,7 @@ GitHub 端可检查、修复、提交 PR 和打包；WorkBuddy 端负责接收�
 准备原应用目录，等待当轮发布授权后更新正式站点，再返回提交 SHA、URL 和验收结果。
 暂不配置定时任务、本机 runner 或额外 OAuth 应用。
 
-仍需首次授权发布来验证：release.json 是否被托管、22 个资源是否一致、
+仍需首次授权发布来验证：release.json 是否被托管、全部已列入 PUBLIC_FILES 的资源是否一致、
 缓存刷新、多文件整体切换、浏览器 Service Worker 更新及静态回滚方式。
 源代码审阅、离线 CI 和资源哈希不能替代登录、同步、模型与数据权限实测。
 

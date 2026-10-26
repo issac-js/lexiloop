@@ -84,6 +84,49 @@ async function main() {
           assert.equal(await page.locator('.tabbar').isVisible(), true);
         });
         if (variant.full) {
+          await check('daily focus runs end-to-end without changing FSRS or daily reviews', async () => {
+            await open(); await tab('games');
+            const before = await page.evaluate(() => window.__QA.snapshot());
+            await page.locator('#g-focus').click();
+            assert.ok(await page.locator('#focus-reveal').count(), 'focus recall did not open');
+            for (let n = 0; n < 4 && await page.locator('#focus-reveal').count(); n++) {
+              if (n === 0) {
+                await page.locator('#focus-hint').click();
+                await page.locator('#focus-reveal').click();
+                assert.equal(await page.locator('[data-focus-recall=independent]').isDisabled(), true);
+                await page.locator('[data-focus-recall=hinted]').click();
+              } else {
+                await page.locator('#focus-reveal').click();
+                await page.locator('[data-focus-recall=independent]').click();
+              }
+            }
+            assert.ok(await page.locator('[data-focus-choice]').count(), 'choice stage not reached');
+            for (let n = 0; n < 8 && await page.locator('[data-focus-choice]').count(); n++) {
+              await page.locator('[data-focus-choice]').first().click();
+              await page.locator('#focus-next').click();
+            }
+            await page.locator('#focus-memory-hide').click();
+            for (let n = 0; n < 3; n++) {
+              await page.locator('[data-focus-memory]').first().click();
+              await page.locator('#focus-memory-next').click();
+            }
+            await page.locator('#focus-response').fill('Thank you for contacting us. I will check the details and explain the next steps.');
+            await page.locator('#focus-scenario-done').click();
+            await page.getByText('本次训练完成').waitFor();
+            const after = await page.evaluate(() => window.__QA.snapshot());
+            assert.deepEqual(after.cards, before.cards);
+            assert.deepEqual(after.reviews, before.reviews);
+            assert.deepEqual(after.stats, before.stats);
+            assert.deepEqual(after.events, before.events);
+            const report = await page.evaluate(() =>
+              Object.keys(localStorage).filter((k) => k.startsWith('lexiloop.focus.history.v1.')).map((k) => JSON.parse(localStorage.getItem(k))));
+            assert.equal(report.length, 1);
+            assert.equal(report[0].length, 1);
+            assert.equal(report[0][0].memoryTotal, 3);
+            await page.locator('#focus-home').click();
+            await page.getByText(/本机近 7 天：1 次/).waitFor();
+            await layout();
+          });
           await check('daily cap survives repeated entry and browser reload', async () => {
             await open('quota'); await tab('study');
             for (let i = 0; i < 2; i++) { await page.locator('#ans-reveal,#reveal').first().click(); await page.locator('[data-g="1"]').click(); await pause(400); }

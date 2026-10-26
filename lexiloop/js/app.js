@@ -5,12 +5,12 @@
  * `from './xxx.js?v=N'` 的 N 加一**（含 index.html 里的 app.js），
  * 否则用户会拿到旧模块、出现「新代码调用旧导出」这类诡异报错。
  */
-import * as S from './store.js?v=109'
-import * as V from './views.js?v=109'
-import * as AUTH from './cloud.js?v=109'
-import * as FSRS from './fsrs.js?v=109'
-import * as GAME from './game.js?v=109'
-import { $, $$, esc, icon, LOGO_SVG, toast, fail, ok, applyTheme, getTheme } from './ui.js?v=109'
+import * as S from './store.js?v=110'
+import * as V from './views.js?v=110'
+import * as AUTH from './cloud.js?v=110'
+import * as FSRS from './fsrs.js?v=110'
+import * as GAME from './game.js?v=110'
+import { $, $$, esc, icon, LOGO_SVG, toast, fail, ok, applyTheme, getTheme } from './ui.js?v=110'
 
 const TABS = [
   { k: 'today', label: '今日', icon: 'today' },
@@ -192,6 +192,7 @@ function markBooted() {
 }
 
 async function onLoggedIn(session) {
+  GAME.exitMode() // 上一个账号的练习场状态不得流入新会话
   signedIn = true
   if (S.state.settings.theme) applyTheme(S.state.settings.theme)
   S.state.user = (session && session.user) || (await AUTH.getSession()).user
@@ -214,6 +215,7 @@ async function onLoggedIn(session) {
 }
 
 function onSignedOut() {
+  GAME.exitMode() // 清理含有用户英文回应的会话内存
   signedIn = false
   current = 'today'
   S.clearPending()

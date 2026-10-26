@@ -14,7 +14,7 @@ PUBLIC_FILES = (
     'icon-180.png', 'icon-192.png', 'icon-512.png',
     'vendor/workbuddy-cloud-sdk.js',
     'js/app.js', 'js/cloud.js', 'js/config.js', 'js/enrich.js', 'js/exporter.js',
-    'js/fsrs.js', 'js/game.js', 'js/importer.js', 'js/judge.js', 'js/labs.js',
+    'js/fsrs.js', 'js/game.js', 'js/focus.js', 'js/focus-core.js', 'js/importer.js', 'js/judge.js', 'js/labs.js',
     'js/store.js', 'js/ui.js', 'js/views.js',
 )
 

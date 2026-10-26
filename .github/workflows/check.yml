@@ -36,7 +36,11 @@ jobs:
         env:
           SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: python -B tools/release_bundle.py --sha "$SOURCE_SHA"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      # Optional diagnostics only. Official release bundles are published separately
+      # after all main-branch checks pass, via GitHub Releases.
+      # Do not misclassify Actions storage-quota errors as learning test failures.
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        continue-on-error: true # v4
         with:
           name: lexiloop-${{ github.event.pull_request.head.sha || github.sha }}
           path: |
@@ -65,13 +69,20 @@ jobs:
           NODE_PATH: ${{ runner.temp }}/browser-deps/node_modules
           LEXILOOP_BROWSER_OUT_DIR: ${{ runner.temp }}/browser-results
         run: node tools/browser-check.js
+      # Optional diagnostics only. Official release bundles are published separately
+      # after all main-branch checks pass, via GitHub Releases.
+      # Do not misclassify Actions storage-quota errors as learning test failures.
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        continue-on-error: true
         if: always()
         with:
           name: browser-results-${{ github.event.pull_request.head.sha || github.sha }}
-          path: ${{ runner.temp }}/browser-results/
+          path: |
+            ${{ runner.temp }}/browser-results/browser-results.json
+            ${{ runner.temp }}/browser-results/chromium-desktop-games.png
+            ${{ runner.temp }}/browser-results/webkit-iphone-se-games.png
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 3
 
   ios-safari:
     runs-on: macos-15
@@ -129,10 +140,17 @@ jobs:
       - name: Capture final Simulator screen
         if: always()
         run: xcrun simctl io "$LEXILOOP_SIMULATOR_ID" screenshot "$LEXILOOP_BROWSER_OUT_DIR/ios-safari-final.png"
+      # Optional diagnostics only. Official release bundles are published separately
+      # after all main-branch checks pass, via GitHub Releases.
+      # Do not misclassify Actions storage-quota errors as learning test failures.
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        continue-on-error: true
         if: always()
         with:
           name: ios-safari-results-${{ github.event.pull_request.head.sha || github.sha }}
-          path: ${{ runner.temp }}/ios-safari-results/
+          path: |
+            ${{ runner.temp }}/ios-safari-results/ios-safari-results.json
+            ${{ runner.temp }}/ios-safari-results/ios-safari-final.png
+            ${{ runner.temp }}/ios-safari-results/xcodebuild.log
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 3
