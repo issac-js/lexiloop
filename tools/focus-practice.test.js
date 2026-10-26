@@ -67,18 +67,24 @@ test('identical or overlapping meanings must not be offered as distractors', asy
   assert.ok(options.every((x) => x.ok || !x.text.includes('紧急帮助')))
 })
 
-test('offline information retention exercise has distinct fixed answers', async () => {
+test('offline information retention varies across dates and every answer is grounded', async () => {
   const C = await corePromise
-  for (const day of ['2026-10-26', '2026-10-27', '2026-10-28']) {
-    const task = C.memoryTask(day)
+  const passages = new Set()
+  for (let i = 0; i < 45; i++) {
+    const date = new Date(Date.UTC(2026, 9, 1 + i)).toISOString().slice(0, 10)
+    const task = C.memoryTask(date)
+    passages.add(task.passage)
     assert.match(task.passage, /[A-Za-z]/)
     assert.equal(task.questions.length, 3)
     for (const q of task.questions) {
       assert.ok(q.correct >= 0 && q.correct < q.options.length)
       assert.equal(new Set(q.options).size, q.options.length)
+      assert.ok(task.passage.toLowerCase().includes(q.options[q.correct].toLowerCase()),
+        'correct answer should appear in the source passage: ' + q.prompt)
     }
-    assert.deepEqual(task, C.memoryTask(day))
+    assert.deepEqual(task, C.memoryTask(date))
   }
+  assert.ok(passages.size >= 25, 'too few distinct daily scenarios: ' + passages.size)
 })
 
 test('session summary excludes ambiguous MCQ and preserves self-rated recall distinctions', async () => {
