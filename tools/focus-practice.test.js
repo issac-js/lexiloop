@@ -55,13 +55,13 @@ test('one correct answer and distinct distractors; fixed option order', async ()
 
 test('identical or overlapping meanings must not be offered as distractors', async () => {
   const C = await corePromise
-  const w = { id: '1', zh: '提供紧急帮助', meanings: ['提供紧急帮助'] }
+  const w = { id: '1', term: 'target', zh: '提供紧急帮助', meanings: ['提供紧急帮助'] }
   const pool = [w,
-    { id: '2', zh: '紧急帮助', meanings: ['紧急帮助'] },
-    { id: '3', zh: '提供紧急帮助', meanings: ['提供紧急帮助'] },
-    { id: '4', zh: '无关任务四', meanings: ['无关任务四'] },
-    { id: '5', zh: '无关任务五', meanings: ['无关任务五'] },
-    { id: '6', zh: '无关任务六', meanings: ['无关任务六'] }]
+    { id: '2', term: 'term2', zh: '紧急帮助', meanings: ['紧急帮助'] },
+    { id: '3', term: 'term3', zh: '提供紧急帮助', meanings: ['提供紧急帮助'] },
+    { id: '4', term: 'term4', zh: '无关任务四', meanings: ['无关任务四'] },
+    { id: '5', term: 'term5', zh: '无关任务五', meanings: ['无关任务五'] },
+    { id: '6', term: 'term6', zh: '无关任务六', meanings: ['无关任务六'] }]
   const options = C.choiceOptions(w, pool)
   assert.ok(options)
   assert.ok(options.every((x) => x.ok || !x.text.includes('紧急帮助')))
