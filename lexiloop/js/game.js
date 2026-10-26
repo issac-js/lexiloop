@@ -14,6 +14,7 @@ import {
   HIT, ALT, WRONG, UNSURE,
 } from './views.js?v=109'
 import * as LABS from './labs.js?v=109'
+import * as FOCUS from './focus.js?v=109'
 
 const G = { mode: null, match: null, dict: null, quiz: null, chat: null, timer: null, story: null, size: 0 }
 
@@ -21,6 +22,7 @@ const G = { mode: null, match: null, dict: null, quiz: null, chat: null, timer: 
  *  给了外部一个明确的"我不要再待在这个子页面里"的出口 ——
  *  否则用户进了某个模式后想回首页，只能靠页面里碰巧存在的返回按钮。 */
 export function exitMode() {
+  FOCUS.resetFocus()
   if (G.timer) { clearInterval(G.timer); G.timer = null }
   G.mode = null
   G.match = null
@@ -147,6 +149,7 @@ const PRACTICE_MODES = [
   { key: 'battle', label: '搭配对战', hint: '回合制选搭配' },
   { key: 'sentence', label: '组句练习', hint: '练语序、冠词、介词' },
   { key: 'speech', label: '语音跟读', hint: '开口读，自动打分' },
+  { key: 'focus', label: '每日综合训练', hint: '主动提取、辨析和情景应用' },
 ]
 
 const SIZE_OPTIONS = [0, 10, 20, 30]
@@ -164,6 +167,7 @@ function sizeChips() {
 }
 
 function launchMode(k, cb) {
+  if (k === 'focus') { if (FOCUS.startFocus()) { G.mode = 'focus'; cb() } }
   if (k === 'match') { startMatch(); cb() }
   else if (k === 'dict-listen') { if (startDict('listen')) cb() }
   else if (k === 'dict-zh') { if (startDict('zh')) cb() }
@@ -1557,6 +1561,7 @@ function bindChatSelect(cb) {
 }
 
 export function renderGames() {
+  if (G.mode === 'focus') return FOCUS.renderFocus()
   if (G.mode === 'match') return renderMatch()
   if (G.mode === 'dict') return renderDict()
   if (G.mode === 'quiz') return renderQuiz()
@@ -1569,6 +1574,7 @@ export function renderGames() {
 
   hydrateStars()   // 进入练习场时用云端星级补齐本地缓存
   const st = streakStats()
+  const focusStats = FOCUS.focusStats()
   return (
     '<h1 class="page">练习场<span class="sub">换种方式过一遍</span></h1>' +
 
@@ -1586,6 +1592,16 @@ export function renderGames() {
     '<div class="tiny">最长 ' + st.best + ' 天　｜　累计 ' + st.total + ' 天　｜　今天' +
     ((S.state.daily || []).some((x) => String(x.reviewed_on).slice(0, 10) === dayKey(new Date()) && Number(x.total) > 0)
       ? '已打卡' : '还没打卡') + '</div></div></div></div>' +
+
+    // 独立于 FSRS 的每日综合训练
+    '<div class="card" style="border-color:var(--brand);">' +
+    '<div class="card-head"><h2>每日综合训练</h2><span class="hint">推荐 · 约 15–20 分钟</span></div>' +
+    '<p class="muted" style="margin:0 0 10px;">已学词主动回忆 → 选择辨析 → 校园安全英文情景回应。' +
+    '可选 AI 反馈；不改变 FSRS、不占复习上限。</p>' +
+    '<p class="tiny" style="margin-bottom:12px;">本机近 7 天：' + focusStats.sessions +
+    ' 次 · 独立提取率（自评）' + (focusStats.independentRate === null ? '暂无' : Math.round(focusStats.independentRate * 100) + '%') +
+    '</p>' +
+    '<button class="btn primary block" id="g-focus">开始每日综合训练</button></div>' +
 
     // AI 短文助记（旗舰）：把词真正用出来
     '<div class="card">' +
@@ -1644,6 +1660,8 @@ export function bindGames(cb, go) {
   $$('[data-size]').forEach((b) => {
     b.onclick = () => { G.size = Number(b.dataset.size) || 0; cb() }
   })
+  const focus = $('#g-focus')
+  if (focus) focus.onclick = () => launchMode('focus', cb)
   const pick = $('#g-pick')
   if (pick) pick.onclick = () => openModePicker(cb)
   const story = $('#g-story')
@@ -1662,6 +1680,7 @@ export function bindGames(cb, go) {
   const stories = $('#g-stories')
   if (stories) stories.onclick = () => openStoryArchive()
 
+  if (G.mode === 'focus') FOCUS.bindFocus(cb, () => { G.mode = null; cb() })
   if (G.mode === 'match') bindMatch(cb)
   if (G.mode === 'dict') bindDict(cb)
   if (G.mode === 'quiz') bindQuiz(cb)

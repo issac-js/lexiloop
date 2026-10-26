@@ -77,7 +77,7 @@ export function startFocus() {
     date: CORE.dayKey(), plan, stage: 'recall', index: 0, revealed: false, hintSeen: false,
     recallResults: [], choiceResults: [], selected: null, busy: false, feedback: '',
     feedbackError: '', feedbackUsed: false, response: '', scenarioCompleted: false,
-    scenario: SCENARIOS[plan.picked.length % SCENARIOS.length],
+    scenario: SCENARIOS[new Date(CORE.dayKey() + 'T12:00:00').getDate() % SCENARIOS.length],
     targets: plan.picked.slice(0, size), saved: false, historySaved: null,
   }
   return true
