@@ -325,7 +325,7 @@ export function bindFocus(cb, onExit) {
     const m = s.memory
     const hide = $('#focus-memory-hide')
     if (hide) hide.onclick = () => { m.phase = 'answer'; cb() }
-    $('[data-focus-memory]').forEach((b) => {
+    $$('[data-focus-memory]').forEach((b) => {
       b.onclick = () => {
         if (m.phase !== 'answer' || m.selected !== null) return
         const idx = Number(b.dataset.focusMemory)
