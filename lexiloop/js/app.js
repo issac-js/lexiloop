@@ -192,6 +192,7 @@ function markBooted() {
 }
 
 async function onLoggedIn(session) {
+  GAME.exitMode() // 上一个账号的练习场状态不得流入新会话
   signedIn = true
   if (S.state.settings.theme) applyTheme(S.state.settings.theme)
   S.state.user = (session && session.user) || (await AUTH.getSession()).user
@@ -214,6 +215,7 @@ async function onLoggedIn(session) {
 }
 
 function onSignedOut() {
+  GAME.exitMode() // 清理含有用户英文回应的会话内存
   signedIn = false
   current = 'today'
   S.clearPending()

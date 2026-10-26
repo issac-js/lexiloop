@@ -121,9 +121,12 @@ test('history rejects malformed entries, retains only 60, calculates rates corre
 test('integration guard: focus cannot call grade/review/daily write methods', () => {
   const app = fs.readFileSync(path.join(__dirname, '../lexiloop/js/focus.js'), 'utf8')
   const game = fs.readFileSync(path.join(__dirname, '../lexiloop/js/game.js'), 'utf8')
+  const entry = fs.readFileSync(path.join(__dirname, '../lexiloop/js/app.js'), 'utf8')
   assert.doesNotMatch(app, /S\.(?:recordReview|applyGrade|creditGrades|creditWords|persistReview|queueReview|pushSettings|persistCard)\s*\(/)
   assert.match(game, /G\.mode === 'focus'/)
   assert.match(game, /FOCUS\.bindFocus/)
+  assert.match(entry, /function onSignedOut\(\) \{\s*GAME\.exitMode\(\)/)
+  assert.match(entry, /async function onLoggedIn\(session\) \{\s*GAME\.exitMode\(\)/)
   assert.match(game, /id="g-focus"/)
   assert.match(app, /lexiloop\.focus\.history\.v1/)
   assert.match(app, /if \(s\.hintSeen && value === 'independent'\) value = 'hinted'/)
