@@ -31,6 +31,7 @@ lexiloop/                    ← 应用本体（部署这个目录）
     ├── store.js             本地状态 + 云端同步 + 备份恢复
     ├── cloud.js             云服务客户端、登录、模型通道
     ├── fsrs.js              FSRS 排程算法（含自检）
+    ├── focus.js / focus-core.js  每日综合训练（不写入 FSRS）
     ├── views.js             所有页面视图 + 学习卡 + 交互判定
     ├── game.js              练习场：配对 / 听写 / 闯关 / AI 对话
     ├── labs.js              练习场：搭配对战 / 组句 / 语音跟读
@@ -119,7 +120,7 @@ python -B tools/ci_check.py
 
 脚本会统一更新模块、入口、CSS、manifest 和 Service Worker 缓存版本。
 
-> 当前代码版本：**v108**（已发布）
+> 当前升级分支版本：**v110**（待审核，未部署）
 
 ---
 
