@@ -40,8 +40,9 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
-          git fetch --no-tags --depth=1 origin main
-          test "$(git rev-parse FETCH_HEAD)" = "$SOURCE_SHA"
+          # Checkout deliberately stores no credentials. Resolve current main
+          # through authenticated GitHub API, never an unauthenticated git fetch.
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')" = "$SOURCE_SHA"
           if git diff --quiet HEAD^ HEAD -- lexiloop/ tools/release_bundle.py; then
             echo 'skip=true' >> "$GITHUB_OUTPUT"
             echo 'Only tooling or documentation changed. No app archive is needed.' >> "$GITHUB_STEP_SUMMARY"
