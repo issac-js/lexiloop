@@ -67,12 +67,27 @@ test('identical or overlapping meanings must not be offered as distractors', asy
   assert.ok(options.every((x) => x.ok || !x.text.includes('紧急帮助')))
 })
 
+test('offline information retention exercise has distinct fixed answers', async () => {
+  const C = await corePromise
+  for (const day of ['2026-10-26', '2026-10-27', '2026-10-28']) {
+    const task = C.memoryTask(day)
+    assert.match(task.passage, /[A-Za-z]/)
+    assert.equal(task.questions.length, 3)
+    for (const q of task.questions) {
+      assert.ok(q.correct >= 0 && q.correct < q.options.length)
+      assert.equal(new Set(q.options).size, q.options.length)
+    }
+    assert.deepEqual(task, C.memoryTask(day))
+  }
+})
+
 test('session summary excludes ambiguous MCQ and preserves self-rated recall distinctions', async () => {
   const C = await corePromise
   const x = C.summarizeSession({
     date: '2026-10-26', at: 100,
     recallResults: ['independent', 'hinted', 'alternative', 'missed'],
     choiceResults: ['correct', 'wrong', 'ambiguous'],
+    memoryTotal: 3, memoryCorrect: 2,
     scenarioCompleted: true, feedbackUsed: true,
   })
   assert.equal(x.recallTotal, 4)
@@ -83,6 +98,8 @@ test('session summary excludes ambiguous MCQ and preserves self-rated recall dis
   assert.equal(x.choiceTotal, 2)
   assert.equal(x.choiceCorrect, 1)
   assert.equal(x.ambiguous, 1)
+  assert.equal(x.memoryTotal, 3)
+  assert.equal(x.memoryCorrect, 2)
   assert.equal(x.scenarioCompleted, true)
 })
 

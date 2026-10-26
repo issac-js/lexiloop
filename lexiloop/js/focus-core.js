@@ -91,6 +91,38 @@ export function buildPlan(pool, onDate = dayKey()) {
   return { recall, choices, topic: picked.find((w) => w.topic)?.topic || '', picked }
 }
 
+/** Fixed, offline-capable workplace information-retention practice (not a cognitive diagnostic test). */
+export function memoryTask(date = dayKey()) {
+  const examples = [
+    {
+      passage: 'A student calls from the library lobby at 3:10 PM. She lost a blue umbrella and wants to know where to report it. The officer advises contacting the campus lost-and-found desk.',
+      questions: [
+        { prompt: 'What did the student lose?', options: ['A blue umbrella', 'A red backpack', 'A phone'], correct: 0 },
+        { prompt: 'Where is the student calling from?', options: ['The east gate', 'The library lobby', 'The sports centre'], correct: 1 },
+        { prompt: 'When did the call happen?', options: ['9:40 AM', '6:15 PM', '3:10 PM'], correct: 2 },
+      ],
+    },
+    {
+      passage: 'A visitor phones from the east gate at 9:40 AM. He has an appointment in the Administration Building and asks which entrance to use. The officer says to follow the visitor registration instructions.',
+      questions: [
+        { prompt: 'Where is the caller?', options: ['The library', 'The east gate', 'The cafeteria'], correct: 1 },
+        { prompt: 'Which building does he need?', options: ['Administration Building', 'Sports Centre', 'Science Building'], correct: 0 },
+        { prompt: 'When did he phone?', options: ['6:15 PM', '3:10 PM', '9:40 AM'], correct: 2 },
+      ],
+    },
+    {
+      passage: 'A student is on the second floor of the sports centre at 6:15 PM. She forgot her student ID and cannot enter a restricted area. The officer recommends contacting the authorised access support desk.',
+      questions: [
+        { prompt: 'Which floor is the student on?', options: ['Ground floor', 'Second floor', 'Fifth floor'], correct: 1 },
+        { prompt: 'What did she forget?', options: ['Her student ID', 'Her umbrella', 'Her notebook'], correct: 0 },
+        { prompt: 'What time is it?', options: ['6:15 PM', '3:10 PM', '9:40 AM'], correct: 0 },
+      ],
+    },
+  ]
+  const day = Number(String(date).slice(-2)) || 1
+  return examples[(day - 1) % examples.length]
+}
+
 export function summarizeSession(session) {
   const recall = Array.isArray(session.recallResults) ? session.recallResults : []
   const choice = Array.isArray(session.choiceResults) ? session.choiceResults : []
@@ -106,6 +138,8 @@ export function summarizeSession(session) {
     choiceTotal: answered.length,
     choiceCorrect: count(answered, 'correct'),
     ambiguous: count(choice, 'ambiguous'),
+    memoryTotal: Math.max(0, Number(session.memoryTotal) || 0),
+    memoryCorrect: Math.max(0, Number(session.memoryCorrect) || 0),
     scenarioCompleted: !!session.scenarioCompleted,
     feedbackUsed: !!session.feedbackUsed,
   }
@@ -126,6 +160,8 @@ export function sanitizeHistory(raw) {
       choiceTotal: Math.max(0, Number(x.choiceTotal) || 0),
       choiceCorrect: Math.max(0, Number(x.choiceCorrect) || 0),
       ambiguous: Math.max(0, Number(x.ambiguous) || 0),
+      memoryTotal: Math.max(0, Number(x.memoryTotal) || 0),
+      memoryCorrect: Math.max(0, Number(x.memoryCorrect) || 0),
       scenarioCompleted: !!x.scenarioCompleted, feedbackUsed: !!x.feedbackUsed,
     }))
 }
@@ -138,6 +174,7 @@ export function recentStats(history, days = 7, now = Date.now()) {
   return {
     sessions: rows.length, recalls, choices,
     independent: total('independent'), hinted: total('hinted'),
+    memoryTotal: total('memoryTotal'), memoryCorrect: total('memoryCorrect'),
     alternative: total('alternative'), missed: total('missed'),
     choiceCorrect: total('choiceCorrect'), ambiguous: total('ambiguous'),
     scenarios: rows.filter((x) => x.scenarioCompleted).length,

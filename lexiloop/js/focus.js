@@ -75,7 +75,9 @@ export function startFocus() {
     previous.independentRate < 0.5 ? 2 : 3
   active = {
     date: CORE.dayKey(), plan, stage: 'recall', index: 0, revealed: false, hintSeen: false,
-    recallResults: [], choiceResults: [], selected: null, busy: false, feedback: '',
+    recallResults: [], choiceResults: [], selected: null,
+    memory: { phase: 'read', index: 0, selected: null, correct: 0, task: CORE.memoryTask() },
+    memoryTotal: 0, memoryCorrect: 0, busy: false, feedback: '',
     feedbackError: '', feedbackUsed: false, response: '', scenarioCompleted: false,
     scenario: SCENARIOS[new Date(CORE.dayKey() + 'T12:00:00').getDate() % SCENARIOS.length],
     targets: plan.picked.slice(0, size), saved: false, historySaved: null,
@@ -139,9 +141,35 @@ function renderChoice(s) {
     '</div>' + backHTML()
 }
 
+function renderMemory(s) {
+  const m = s.memory, task = m.task
+  return header('信息保持 · 3/5', m.phase === 'read' ? '阅读并记住' : (m.index + 1) + ' / ' + task.questions.length) +
+    '<div class="card"><h2>短时英语信息记忆</h2>' +
+    '<p class="muted">阅读一段校园求助信息，随后隐藏原文，回答人物、地点或时间问题。成绩仅说明本任务表现。</p>' +
+    (m.phase === 'read'
+      ? '<p style="font-size:17px;line-height:1.8;">' + esc(task.passage) + '</p>' +
+        '<button class="btn primary block" id="focus-memory-hide">记好了，隐藏原文并作答</button>'
+      : (function () {
+          const q = task.questions[m.index]
+          if (!q) return ''
+          return '<h3 style="margin:16px 0;">' + esc(q.prompt) + '</h3>' +
+            '<div class="grid2">' + q.options.map((opt, i) =>
+              '<button class="btn ' + (m.selected === i ? 'soft' : 'ghost') +
+              '" data-focus-memory="' + i + '"' +
+              (m.selected !== null ? ' disabled' : '') + '>' + esc(opt) + '</button>'
+            ).join('') + '</div>' +
+            (m.selected !== null
+              ? '<p class="tiny" style="margin-top:12px;">' +
+                (m.selected === q.correct ? '回答正确。' : '正确答案：' + esc(q.options[q.correct])) +
+                '</p><button class="btn primary block" id="focus-memory-next">下一步</button>'
+              : '<button class="btn ghost block" id="focus-memory-skip" style="margin-top:12px;">想不起来，跳过本题</button>')
+        })()) +
+    '</div>' + backHTML()
+}
+
 function renderScenario(s) {
   const targetText = s.targets.map((x) => '<span class="chip">' + esc(x.term) + '</span>').join(' ')
-  return header('真实情景应用 · 3/4', '自选用词') +
+  return header('真实情景应用 · 4/5', '自选用词') +
     '<div class="card">' +
     '<h2>' + esc(s.scenario.title) + '</h2>' +
     '<p class="muted">' + esc(s.scenario.opening) + '</p>' +
@@ -171,7 +199,7 @@ function renderDone(s) {
   const h = focusStats()
   const independentRate = r.recallTotal ? Math.round(r.independent / r.recallTotal * 100) + '%' : '—'
   const choiceRate = r.choiceTotal ? Math.round(r.choiceCorrect / r.choiceTotal * 100) + '%' : '—'
-  return header('学习质量报告 · 4/4', '已完成') +
+  return header('学习质量报告 · 5/5', '已完成') +
     '<div class="card">' +
     '<h2>本次训练完成</h2>' +
     '<div class="grid2">' +
@@ -180,7 +208,8 @@ function renderDone(s) {
     '</div>' +
     '<p class="tiny" style="margin-top:12px;">提示后想起 ' + r.hinted + ' · 合理其他表达（自评） ' +
     r.alternative + ' · 没想起 ' + r.missed + ' · 有歧义的选项题 ' + r.ambiguous + '</p>' +
-    '<p class="tiny">情景练习：' + (r.scenarioCompleted ? '已自行完成' : '已跳过') +
+    '<p class="tiny">短时信息记忆：' + r.memoryCorrect + ' / ' + r.memoryTotal + '；情景练习：' +
+    (r.scenarioCompleted ? '已自行完成' : '已跳过') +
     '；最近 7 天完成 ' + h.sessions + ' 次。</p>' +
     '<p class="tiny">' + (s.historySaved
       ? '报告仅保存在当前浏览器、当前账号下，不跨设备同步。'
@@ -201,6 +230,7 @@ export function renderFocus() {
   const s = active
   if (s.stage === 'recall') return renderRecall(s)
   if (s.stage === 'choice') return renderChoice(s)
+  if (s.stage === 'memory') return renderMemory(s)
   if (s.stage === 'scenario') return renderScenario(s)
   return renderDone(s)
 }
@@ -209,7 +239,7 @@ function goAfterRecall(s) {
   s.revealed = false; s.hintSeen = false
   if (s.index < s.plan.recall.length) return
   s.index = 0
-  s.stage = s.plan.choices.length ? 'choice' : 'scenario'
+  s.stage = s.plan.choices.length ? 'choice' : 'memory'
 }
 
 function finish(s) {
@@ -288,7 +318,33 @@ export function bindFocus(cb, onExit) {
       s.choiceResults.push(result)
       s.selected = null
       s.index++
-      if (s.index >= s.plan.choices.length) { s.stage = 'scenario'; s.index = 0 }
+      if (s.index >= s.plan.choices.length) { s.stage = 'memory'; s.index = 0 }
+      cb()
+    }
+  } else if (s.stage === 'memory') {
+    const m = s.memory
+    const hide = $('#focus-memory-hide')
+    if (hide) hide.onclick = () => { m.phase = 'answer'; cb() }
+    $('[data-focus-memory]').forEach((b) => {
+      b.onclick = () => {
+        if (m.phase !== 'answer' || m.selected !== null) return
+        const idx = Number(b.dataset.focusMemory)
+        if (!Number.isInteger(idx) || idx < 0 || idx >= m.task.questions[m.index].options.length) return
+        m.selected = idx; cb()
+      }
+    })
+    const skip = $('#focus-memory-skip')
+    if (skip) skip.onclick = () => { if (m.selected === null) { m.selected = -1; cb() } }
+    const next = $('#focus-memory-next')
+    if (next) next.onclick = () => {
+      if (m.selected === null) return
+      if (m.selected === m.task.questions[m.index].correct) m.correct++
+      m.index++; m.selected = null
+      if (m.index >= m.task.questions.length) {
+        s.memoryTotal = m.task.questions.length
+        s.memoryCorrect = m.correct
+        s.stage = 'scenario'
+      }
       cb()
     }
   } else if (s.stage === 'scenario') {
