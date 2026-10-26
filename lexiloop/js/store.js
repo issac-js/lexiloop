@@ -5,9 +5,9 @@
  * 再异步推到云端；换设备登录时从云端整体拉回。单用户跨设备不会并发改同一张卡，
  * 因此采用「以云端为权威 + 本地乐观更新」的简单模型。
  */
-import { db, getSession } from './cloud.js?v=109'
-import { LS_KEYS, DEFAULT_SETTINGS } from './config.js?v=109'
-import * as FSRS from './fsrs.js?v=109'
+import { db, getSession } from './cloud.js?v=110'
+import { LS_KEYS, DEFAULT_SETTINGS } from './config.js?v=110'
+import * as FSRS from './fsrs.js?v=110'
 
 export const state = {
   booted: false,
