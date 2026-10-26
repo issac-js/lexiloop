@@ -69,9 +69,12 @@ jobs:
         if: always()
         with:
           name: browser-results-${{ github.event.pull_request.head.sha || github.sha }}
-          path: ${{ runner.temp }}/browser-results/
+          path: |
+            ${{ runner.temp }}/browser-results/browser-results.json
+            ${{ runner.temp }}/browser-results/chromium-desktop-games.png
+            ${{ runner.temp }}/browser-results/webkit-iphone-se-games.png
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 3
 
   ios-safari:
     runs-on: macos-15
@@ -133,6 +136,9 @@ jobs:
         if: always()
         with:
           name: ios-safari-results-${{ github.event.pull_request.head.sha || github.sha }}
-          path: ${{ runner.temp }}/ios-safari-results/
+          path: |
+            ${{ runner.temp }}/ios-safari-results/ios-safari-results.json
+            ${{ runner.temp }}/ios-safari-results/ios-safari-final.png
+            ${{ runner.temp }}/ios-safari-results/xcodebuild.log
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 3
