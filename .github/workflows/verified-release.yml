@@ -1,0 +1,112 @@
+name: Publish verified LexiLoop release archive
+
+# Publish a downloadable archive without using GitHub Actions artifact storage.
+# Never deploy WorkBuddy from this workflow.
+on:
+  workflow_run:
+    workflows: ['LexiLoop checks and release bundle']
+    types: [completed]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: lexiloop-verified-release
+  cancel-in-progress: false
+
+jobs:
+  publish-archive:
+    if: >-
+      ${{ github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.event == 'push' &&
+          github.event.workflow_run.head_branch == 'main' &&
+          github.event.workflow_run.head_repository.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout exactly the successful main commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Verify provenance and release-relevant change
+        id: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          git fetch --no-tags --depth=1 origin main
+          test "$(git rev-parse FETCH_HEAD)" = "$SOURCE_SHA"
+          if git diff --quiet HEAD^ HEAD -- lexiloop/ tools/release_bundle.py; then
+            echo 'skip=true' >> "$GITHUB_OUTPUT"
+            echo 'Only tooling or documentation changed. No app archive is needed.' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'skip=false' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Python
+        if: steps.source.outputs.skip == 'false'
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+
+      - name: Setup Node
+        if: steps.source.outputs.skip == 'false'
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+
+      - name: Reverify and package exact main source
+        if: steps.source.outputs.skip == 'false'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -B tools/check_line_endings.py
+          python -B tools/ci_check.py
+          python -B tools/release_bundle.py --sha "$SOURCE_SHA"
+          (cd dist && sha256sum -c -- *.zip.sha256)
+          python - <<'PY'
+          from pathlib import Path
+          import json, os, zipfile
+          from tools.release_bundle import PUBLIC_FILES
+          source = os.environ['SOURCE_SHA']
+          with zipfile.ZipFile(Path('dist') / ('lexiloop-' + source + '.zip')) as bundle:
+              manifest = json.loads(bundle.read('release.json'))
+              assert manifest['source_sha'] == source
+              assert sorted(manifest['files']) == sorted(PUBLIC_FILES)
+              assert sorted(bundle.namelist()) == sorted([*PUBLIC_FILES, 'release.json'])
+          print('Verified full SHA and exact public file allowlist.')
+          PY
+
+      - name: Publish SHA-pinned pre-release assets
+        if: steps.source.outputs.skip == 'false'
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$(python - <<'PY'
+          import re
+          from pathlib import Path
+          html = Path('lexiloop/index.html').read_text(encoding='utf-8')
+          print(re.search(r'js/app\.js\?v=(\d+)', html).group(1))
+          PY
+          )"
+          TAG="lexiloop-v${VERSION}-${SOURCE_SHA:0:12}"
+          ZIP="dist/lexiloop-${SOURCE_SHA}.zip"
+          SUM="dist/lexiloop-${SOURCE_SHA}.zip.sha256"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG already exists. Refusing to overwrite any assets." >&2
+            exit 1
+          fi
+          gh release create "$TAG" "$ZIP" "$SUM" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$SOURCE_SHA" \
+            --title "LexiLoop v${VERSION} — verified source ${SOURCE_SHA:0:12}" \
+            --notes "Source SHA: $SOURCE_SHA. Generated from the full, successful main-branch QA workflow. This is a private GitHub pre-release for WorkBuddy handoff; it does not deploy or modify production." \
+            --prerelease
+          echo "Published a SHA-locked archive: $TAG" >> "$GITHUB_STEP_SUMMARY"
+          echo "No WorkBuddy deployment was performed." >> "$GITHUB_STEP_SUMMARY"
