@@ -46,6 +46,7 @@ def main():
     assert "'./styles.css?v=" + version + "'" in sw
     json.loads((APP / 'manifest.webmanifest').read_text())
     run('node', 'tools/qa-fsrs.js')
+    run('node', '--test', 'tools/goal-metrics.test.js')
     run('node', '--test', 'tools/live-checks.test.js')
     run('node', '--test', 'tools/learning-schedule.test.js')
     run('node', '--test', 'tools/focus-practice.test.js')

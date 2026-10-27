@@ -5,9 +5,11 @@
  * 再异步推到云端；换设备登录时从云端整体拉回。单用户跨设备不会并发改同一张卡，
  * 因此采用「以云端为权威 + 本地乐观更新」的简单模型。
  */
-import { db, getSession } from './cloud.js?v=110'
-import { LS_KEYS, DEFAULT_SETTINGS } from './config.js?v=110'
-import * as FSRS from './fsrs.js?v=110'
+import { db, getSession } from './cloud.js?v=111'
+import { LS_KEYS, DEFAULT_SETTINGS } from './config.js?v=111'
+import * as FSRS from './fsrs.js?v=111'
+/* 目标完成度的纯算术单独成模块，方便离线单测（工具页与今日页共用同一口径）。 */
+export { goalCompletion } from './goal-metrics.js?v=111'
 
 export const state = {
   booted: false,
@@ -1120,21 +1122,31 @@ export function goalProgress() {
   const today = todayKey()
   const basePlan = ensureDayPlan()
   const st = statsFor(today)
-  const doneReview = dailyReviewed()
+  const doneReview = dailyReviewed()        // 作答次数：额度语义，保持不变
+  const doneCards = dailyReviewedCards()    // 今日复习过的不同卡片数：目标语义
+  const dueNow = dueCards().length          // 此刻仍到期、能马上做的卡片数
   const doneNew = Number(st.new_words) || 0
   const plan = Object.assign({}, basePlan, {
     due: Math.min(basePlan.due, dailyReviewLimit()),
     newGoal: newWordsPaused() ? doneNew : Math.min(basePlan.newGoal, doneNew + dailyReviewAllowance()),
   })
-  const reviewMet = plan.due === 0 || doneReview >= plan.due
+  /* 复习目标必须按"卡片"算，且分母要能自然收敛。
+     旧实现拿当日快照 plan.due（卡片数）减作答次数（次数），两个单位相减；
+     卡片被 FSRS 推到明天后快照不回缩 → 界面永远"还差几十张"、待复习却是 0，
+     当天再也不可能达标，达标连胜被无端打断（2026-10-27 真机实测）。
+     现在分母 = 今天已复习的卡 + 此刻仍到期的卡：做完最后一张就闭合，不留死账。 */
+  const dueToday = doneCards + dueNow
+  const reviewMet = dueNow === 0
   const newMet = plan.newGoal === 0 || doneNew >= plan.newGoal
   // 可选：把"本周做过一次抽测"也纳入达标条件
   const needTest = String(state.settings.goal_include_test) === 'true'
   const lastTest = Number(state.settings.last_test_at) || 0
   const testMet = !needTest || (Date.now() - lastTest) < 7 * 86400000
+  /* 已记账的达标当天不回退：中途有新卡到期时不把今天的达标翻回未达标。 */
+  const recorded = !!goalDays()[today]
   return {
-    plan, doneReview, doneNew, reviewMet, newMet, testMet, needTest,
-    met: reviewMet && newMet && testMet, today,
+    plan, doneReview, doneCards, dueNow, dueToday, doneNew, reviewMet, newMet, testMet, needTest,
+    met: recorded || (reviewMet && newMet && testMet), today,
   }
 }
 
@@ -1198,6 +1210,17 @@ export function dailyReviewed(now = Date.now()) {
   const total = Math.max(0, Number(statsFor(todayKey(new Date(now))).total) || 0, saved, reviewUsage.get(key) || 0)
   reviewUsage.set(key, total)
   return total
+}
+
+/**
+ * 今日已复习过的**不同卡片数**（目标口径）。
+ * 与 dailyReviewed() 的区别：后者是作答**次数**，一张卡连续巩固会记多次（忘了→10 分钟后重学）。
+ * 目标进度必须按卡片算，否则"已做"会跑得比"还剩"快，界面上留下永远补不齐的缺口。
+ */
+export function dailyReviewedCards(now = Date.now()) {
+  const key = todayKey(new Date(now))
+  return state.cards.filter((c) =>
+    c.last_review_at && todayKey(new Date(c.last_review_at)) === key).length
 }
 
 export function dailyReviewAllowance(now = Date.now()) {
