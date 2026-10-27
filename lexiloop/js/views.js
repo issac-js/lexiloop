@@ -2,23 +2,23 @@
  * views.js — 全部页面
  * 每个页面导出 render()（返回 HTML）与 bind()（挂载事件），由 app.js 调度。
  */
-import * as S from './store.js?v=110'
-import * as FSRS from './fsrs.js?v=110'
-import { CARD_TYPES, ENRICH_CONCURRENCY, RECOMMENDED_SETTINGS } from './config.js?v=110'
+import * as S from './store.js?v=111'
+import * as FSRS from './fsrs.js?v=111'
+import { CARD_TYPES, ENRICH_CONCURRENCY, RECOMMENDED_SETTINGS } from './config.js?v=111'
 import {
   esc, $, $$, toast, fail, ok, openModal, closeModal, confirmDialog,
   icon, LOGO_SVG, speak, fmtDateCN, relTime, STRENGTH_ZH, REGISTER_ZH,
   listEnVoices, getVoicePref, setVoicePref, getTheme, applyTheme,
-} from './ui.js?v=110'
-import * as AUTH from './cloud.js?v=110'
-import * as ENRICH from './enrich.js?v=110'
-import * as EXP from './exporter.js?v=110'
-import { parseImport, skippedLines, DEFAULT_MAX_WORDS } from './importer.js?v=110'
+} from './ui.js?v=111'
+import * as AUTH from './cloud.js?v=111'
+import * as ENRICH from './enrich.js?v=111'
+import * as EXP from './exporter.js?v=111'
+import { parseImport, skippedLines, DEFAULT_MAX_WORDS } from './importer.js?v=111'
 
 import {
   judgeTyped, reviewSemantics, looksLikeEnglishPhrase, cachedVerdict,
   HIT, ALT, WRONG, UNSURE,
-} from './judge.js?v=110'
+} from './judge.js?v=111'
 
 /* ═════════════════════════ 通用片段 ═════════════════════════ */
 
@@ -95,44 +95,47 @@ export function collocationBlock(c, opts) {
  */
 function goalCard() {
   const today = S.statsFor(S.todayKey())
-  const doneReviews = S.dailyReviewed()
   const doneNew = Number(today.new_words) || 0
   const dailyMax = S.dailyReviewLimit()
   const isRest = S.isRestDay()
   // 进度环与达标判断共用预算、休息日和积压规则。
   const gp = S.goalProgress()
   const goalNew = gp.plan.newGoal
-  // 复习目标受每日总额度约束，新学仍按不同词数计。
-  const goalReviews = Math.min(dailyMax, Math.max(gp.plan.due, doneReviews))
+  /* 复习一律按**卡片**算：doneCards 是今天复习过的不同卡，dueNow 是仍到期待做。
+     分母取两者之和（受每日额度封顶），做完最后一张自然闭合 —— 不会出现
+     "还差 43 张"却"待复习 0"这种补不齐的账。算术收在 goal-metrics.js，由单测锁住。 */
+  const doneCards = gp.doneCards
+  const dueNow = gp.dueNow
+  const needTest = String(S.state.settings.goal_include_test) === 'true'
+  const lastTest = Number(S.state.settings.last_test_at) || 0
+  const testDays = lastTest ? Math.floor((Date.now() - lastTest) / 86400000) : null
+  const testDone = !needTest || (testDays !== null && testDays < 7)
+
+  /* 进度环必须和徽章同口径（三项等权：复习 / 新学 / 抽测；休息日不纳入新学）。
+     旧实现只按复习完成度算，复习做完而抽测没做时环显示 100%、徽章却说还差一次抽测。 */
+  const gm = S.goalCompletion({
+    doneCards: doneCards, dueNow: dueNow, doneNew: doneNew, newGoal: goalNew,
+    needTest: needTest, testDone: testDone, isRest: isRest,
+    pausedNew: S.newWordsPaused(), dailyMax: dailyMax,
+  })
+  const goalReviews = gm.goalReviews
+  const pct = gm.pct
+
   // 新学一项在休息日改说"今日休息"，不参与百分比：分母 0 会算出 NaN/Infinity，
   // 也会让"还差 8"这种根本做不到的指标继续挂在脸上。
   const rows = [
-    { label: '复习', done: doneReviews, goal: goalReviews },
+    { label: '复习', done: doneCards, goal: goalReviews },
     isRest || S.newWordsPaused()
       ? { label: '新学', done: doneNew, goal: 0, rest: true, note: isRest ? '今日休息' : '先清理逾期复习' }
       : { label: '新学', done: doneNew, goal: goalNew },
   ]
   const R = 26, C = 2 * Math.PI * R
   const gs = S.goalStats(30)
-  const needTest = String(S.state.settings.goal_include_test) === 'true'
-  const lastTest = Number(S.state.settings.last_test_at) || 0
-  const testDays = lastTest ? Math.floor((Date.now() - lastTest) / 86400000) : null
-  const testDone = !needTest || (testDays !== null && testDays < 7)
-
-  /* 进度环必须和徽章同口径。
-     旧实现只按"复习完成度"算百分比：复习做完、抽测没做时环显示 100%，
-     徽章却说"还差一次抽测" —— 同一张卡上两个数字互相矛盾，用户没法判断到底做完没有。
-     现在三项等权：复习、新学、抽测（未启用抽测要求时只有前两项）。
-     休息日不存在"新学"这一项，直接不纳入分母 —— 否则 0/0 会把环打成 NaN。 */
-  const parts = [goalReviews ? Math.min(1, doneReviews / goalReviews) : 1]
-  if (!isRest && !S.newWordsPaused()) parts.push(goalNew ? Math.min(1, doneNew / goalNew) : 1)
-  if (needTest) parts.push(testDone ? 1 : 0)
-  const pct = Math.round((parts.reduce((a, b) => a + b, 0) / parts.length) * 100)
 
   const badge = gp.met
     ? '<span class="chip strong">今日达标 ✅</span>'
     : '<span class="chip">今日还差 ' +
-      (!gp.reviewMet ? (gp.plan.due - gp.doneReview) + ' 张复习'
+      (!gp.reviewMet ? dueNow + ' 张复习'
         : (!gp.newMet && !isRest) ? (gp.plan.newGoal - gp.doneNew) + ' 个新词'
           : '一次抽测') + '</span>'
 
@@ -162,6 +165,9 @@ function goalCard() {
           : '还没做 —— 7 天内做一次就算达标') +
         '</span></div>'
       : '') +
+    // 口径写出来：环是三项平均，不是记忆强度 —— 否则 87% 容易被读成"记住了 87%"
+    '<p class="tiny" style="margin:8px 0 0;">目标完成度 = 复习 / 新学 / 抽测 三项平均' +
+    (needTest ? '' : '（未启用抽测要求）') + '，不等于记忆保持率</p>' +
     '<div class="row between" style="margin-top:6px;align-items:center;">' + badge +
     '<span class="tiny" title="达标连胜：三项全部达成的连续天数（和上面的连续学习天数不是一回事）">' +
     '达标连胜 ' + gs.streak + ' 天　｜　近 30 天达标 ' + gs.hit + '/' + gs.span +
@@ -1107,7 +1113,7 @@ export function sessionProgress() {
 export {
   normalizeAns, judgeTyped, looksLikeEnglishPhrase, reviewSemantics, cachedVerdict,
   clearJudgeCache, HIT, ALT, WRONG, UNSURE,
-} from './judge.js?v=110'
+} from './judge.js?v=111'
 
 const REG_ZH = { formal: '正式', neutral: '中性', spoken: '口语', informal: '非正式' }
 
