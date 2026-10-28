@@ -83,6 +83,33 @@ async function main() {
           await page.locator('.tabbar').waitFor({ state: 'visible' });
           assert.equal(await page.locator('.tabbar').isVisible(), true);
         });
+        await check('review UI updates live, preserves settings, pauses safely and retries failed word', async () => {
+          await open('review'); await tab('me');
+          await page.locator('#st-new').fill('9'); await page.locator('#st-new').blur();
+          await page.locator('#me-review-all').click();
+          await page.waitForFunction(() => window.__reviewMock.calls === 1);
+          assert.match(await page.locator('#review-panel').innerText(), /复核中/);
+          assert.equal(await page.locator('#me-review-all').isDisabled(), true);
+          assert.equal(await page.locator('#st-new').inputValue(), '9');
+          await page.locator('#me-review-pause').click();
+          assert.match(await page.locator('#review-panel').innerText(), /正在暂停/);
+          assert.equal(await page.locator('#me-review-all').isDisabled(), true);
+          await page.evaluate(() => window.__reviewMock.releases.shift()());
+          await page.waitForFunction(() => document.querySelector('#review-panel').textContent.includes('已暂停'));
+          assert.match(await page.locator('#review-panel').innerText(), /1 \/ 12 个词条/);
+          await page.evaluate(() => { window.__reviewMock.mode = 'error'; });
+          await page.locator('#me-review-all').click();
+          await page.waitForFunction(() => document.querySelector('#review-panel').textContent.includes('模型请求失败'));
+          assert.match(await page.locator('#review-panel').innerText(), /1 \/ 12 个词条/);
+          assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('lexiloop.reviewJob')).cursor), 1);
+          await page.evaluate(() => { window.__reviewMock.mode = 'success'; });
+          await page.locator('#me-review-all').click();
+          await page.waitForFunction(() => document.querySelector('#review-hint').textContent === '已完成');
+          assert.match(await page.locator('#review-panel').innerText(), /12 \/ 12 个词条/);
+          assert.equal(await page.locator('#st-new').inputValue(), '9');
+          assert.equal(await page.locator('#me-review-pause').count(), 0);
+          await layout();
+        });
         if (variant.full) {
           await check('daily focus runs end-to-end without changing FSRS or daily reviews', async () => {
             await open(); await tab('games');

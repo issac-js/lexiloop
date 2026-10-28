@@ -5,12 +5,12 @@
  * `from './xxx.js?v=N'` 的 N 加一**（含 index.html 里的 app.js），
  * 否则用户会拿到旧模块、出现「新代码调用旧导出」这类诡异报错。
  */
-import * as S from './store.js?v=112'
-import * as V from './views.js?v=112'
-import * as AUTH from './cloud.js?v=112'
-import * as FSRS from './fsrs.js?v=112'
-import * as GAME from './game.js?v=112'
-import { $, $$, esc, icon, LOGO_SVG, toast, fail, ok, applyTheme, getTheme } from './ui.js?v=112'
+import * as S from './store.js?v=113'
+import * as V from './views.js?v=113'
+import * as AUTH from './cloud.js?v=113'
+import * as FSRS from './fsrs.js?v=113'
+import * as GAME from './game.js?v=113'
+import { $, $$, esc, icon, LOGO_SVG, toast, fail, ok, applyTheme, getTheme } from './ui.js?v=113'
 
 const TABS = [
   { k: 'today', label: '今日', icon: 'today' },
@@ -140,7 +140,8 @@ function bindMain() {
 /** 统一的视图刷新回调：'banner' 只刷进度条，true 整页重绘，其余只重绘当前页 */
 function viewCallback() {
   return (kind) => {
-    if (kind === 'banner') V.refreshJobBanner(viewCallback())
+    if (kind === 'review') V.refreshReviewPanel(viewCallback())
+    else if (kind === 'banner') V.refreshJobBanner(viewCallback())
     else if (kind === true) render()
     else renderMain()
   }
