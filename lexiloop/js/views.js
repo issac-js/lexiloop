@@ -2,23 +2,23 @@
  * views.js — 全部页面
  * 每个页面导出 render()（返回 HTML）与 bind()（挂载事件），由 app.js 调度。
  */
-import * as S from './store.js?v=111'
-import * as FSRS from './fsrs.js?v=111'
-import { CARD_TYPES, ENRICH_CONCURRENCY, RECOMMENDED_SETTINGS } from './config.js?v=111'
+import * as S from './store.js?v=112'
+import * as FSRS from './fsrs.js?v=112'
+import { CARD_TYPES, ENRICH_CONCURRENCY, RECOMMENDED_SETTINGS } from './config.js?v=112'
 import {
   esc, $, $$, toast, fail, ok, openModal, closeModal, confirmDialog,
   icon, LOGO_SVG, speak, fmtDateCN, relTime, STRENGTH_ZH, REGISTER_ZH,
   listEnVoices, getVoicePref, setVoicePref, getTheme, applyTheme,
-} from './ui.js?v=111'
-import * as AUTH from './cloud.js?v=111'
-import * as ENRICH from './enrich.js?v=111'
-import * as EXP from './exporter.js?v=111'
-import { parseImport, skippedLines, DEFAULT_MAX_WORDS } from './importer.js?v=111'
+} from './ui.js?v=112'
+import * as AUTH from './cloud.js?v=112'
+import * as ENRICH from './enrich.js?v=112'
+import * as EXP from './exporter.js?v=112'
+import { parseImport, skippedLines, DEFAULT_MAX_WORDS } from './importer.js?v=112'
 
 import {
   judgeTyped, reviewSemantics, looksLikeEnglishPhrase, cachedVerdict,
   HIT, ALT, WRONG, UNSURE,
-} from './judge.js?v=111'
+} from './judge.js?v=112'
 
 /* ═════════════════════════ 通用片段 ═════════════════════════ */
 
@@ -133,7 +133,7 @@ function goalCard() {
   const gs = S.goalStats(30)
 
   const badge = gp.met
-    ? '<span class="chip strong">今日达标 ✅</span>'
+    ? '<span class="chip strong">今日达标 ✓</span>'
     : '<span class="chip">今日还差 ' +
       (!gp.reviewMet ? dueNow + ' 张复习'
         : (!gp.newMet && !isRest) ? (gp.plan.newGoal - gp.doneNew) + ' 个新词'
@@ -1113,7 +1113,7 @@ export function sessionProgress() {
 export {
   normalizeAns, judgeTyped, looksLikeEnglishPhrase, reviewSemantics, cachedVerdict,
   clearJudgeCache, HIT, ALT, WRONG, UNSURE,
-} from './judge.js?v=111'
+} from './judge.js?v=112'
 
 const REG_ZH = { formal: '正式', neutral: '中性', spoken: '口语', informal: '非正式' }
 
