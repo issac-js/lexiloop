@@ -5,12 +5,12 @@
  * `from './xxx.js?v=N'` 的 N 加一**（含 index.html 里的 app.js），
  * 否则用户会拿到旧模块、出现「新代码调用旧导出」这类诡异报错。
  */
-import * as S from './store.js?v=113'
-import * as V from './views.js?v=113'
-import * as AUTH from './cloud.js?v=113'
-import * as FSRS from './fsrs.js?v=113'
-import * as GAME from './game.js?v=113'
-import { $, $$, esc, icon, LOGO_SVG, toast, fail, ok, applyTheme, getTheme } from './ui.js?v=113'
+import * as S from './store.js?v=114'
+import * as V from './views.js?v=114'
+import * as AUTH from './cloud.js?v=114'
+import * as FSRS from './fsrs.js?v=114'
+import * as GAME from './game.js?v=114'
+import { $, $$, esc, icon, LOGO_SVG, toast, fail, ok, applyTheme, getTheme } from './ui.js?v=114'
 
 const TABS = [
   { k: 'today', label: '今日', icon: 'today' },
