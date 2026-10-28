@@ -2,23 +2,23 @@
  * views.js — 全部页面
  * 每个页面导出 render()（返回 HTML）与 bind()（挂载事件），由 app.js 调度。
  */
-import * as S from './store.js?v=114'
-import * as FSRS from './fsrs.js?v=114'
-import { CARD_TYPES, ENRICH_CONCURRENCY, RECOMMENDED_SETTINGS } from './config.js?v=114'
+import * as S from './store.js?v=115'
+import * as FSRS from './fsrs.js?v=115'
+import { CARD_TYPES, ENRICH_CONCURRENCY, RECOMMENDED_SETTINGS } from './config.js?v=115'
 import {
   esc, $, $$, toast, fail, ok, openModal, closeModal, confirmDialog,
   icon, LOGO_SVG, speak, fmtDateCN, relTime, STRENGTH_ZH, REGISTER_ZH,
   listEnVoices, getVoicePref, setVoicePref, getTheme, applyTheme,
-} from './ui.js?v=114'
-import * as AUTH from './cloud.js?v=114'
-import * as ENRICH from './enrich.js?v=114'
-import * as EXP from './exporter.js?v=114'
-import { parseImport, skippedLines, DEFAULT_MAX_WORDS } from './importer.js?v=114'
+} from './ui.js?v=115'
+import * as AUTH from './cloud.js?v=115'
+import * as ENRICH from './enrich.js?v=115'
+import * as EXP from './exporter.js?v=115'
+import { parseImport, skippedLines, DEFAULT_MAX_WORDS } from './importer.js?v=115'
 
 import {
   judgeTyped, reviewSemantics, looksLikeEnglishPhrase, cachedVerdict,
   HIT, ALT, WRONG, UNSURE,
-} from './judge.js?v=114'
+} from './judge.js?v=115'
 
 /* ═════════════════════════ 通用片段 ═════════════════════════ */
 
@@ -1157,7 +1157,7 @@ export function sessionProgress() {
 export {
   normalizeAns, judgeTyped, looksLikeEnglishPhrase, reviewSemantics, cachedVerdict,
   clearJudgeCache, HIT, ALT, WRONG, UNSURE,
-} from './judge.js?v=114'
+} from './judge.js?v=115'
 
 const REG_ZH = { formal: '正式', neutral: '中性', spoken: '口语', informal: '非正式' }
 
