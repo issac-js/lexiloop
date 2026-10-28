@@ -7,7 +7,7 @@
  *   2. 结构层面：强制 JSON 输出，字段枚举固定
  *   3. 校验层面：本地规则闸门，不通过的一律丢弃（宁可少，不可假）
  */
-import { chatText, pickModelAfter } from './cloud.js?v=115'
+import { chatText, pickModelAfter } from './cloud.js?v=116'
 
 export const PROMPT_VERSION = 'colloc-v2'
 
@@ -70,6 +70,16 @@ function buildUserPrompt(term) {
     'include at least one sense per part of speech; never output only one part of speech ' +
     'when another one is common with the same spelling',
     '- "pos" must list every part of speech that appears in "senses" — no more, no less',
+    /* 名词被当成动词生成是线上最脏的一类：sentinel / vinegar / council 整组搭配
+       都建在 sentineled / vinegared / counciled 这种不存在的动词上，例句还自洽，
+       学习者无法自查。复核闸门能抓，但那是事后；这里在生成阶段就禁掉。 */
+    '- every collocation "type" and "pattern" MUST match the TARGET part of speech: ' +
+    'for a noun target never output a verb inflection or verb pattern ' +
+    '(no "sentineled", "vinegared", "counciled"); noun collocations are noun phrases ' +
+    'or noun + preposition (e.g. "council meeting", "vinegar on chips")',
+    '- for a verb target, patterns must be verb patterns (e.g. "expedite the process"), ' +
+    'never the noun used as a verb; if the target is both noun and verb, each collocation ' +
+    'must belong to one of the senses you listed',
     '- confusables: at most 2',
     '- word_family: at most 4',
     '- strength "strong" only when native speakers treat it as a fixed chunk',
