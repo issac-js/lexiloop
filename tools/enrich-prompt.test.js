@@ -23,3 +23,13 @@ test('仍保留条数上限，避免提示词失控', () => {
   assert.match(SRC, /senses: at most 2/);
   assert.match(SRC, /collocations: 4 to 5 items/);
 });
+
+test('提示词要求搭配的 type/pattern 与词性一致', () => {
+  assert.match(SRC, /MUST match the TARGET part of speech/, '缺少「搭配须与词性一致」的要求');
+  assert.match(SRC, /never output a verb inflection or verb pattern/, '缺少「名词不得产出动词变形」的禁令');
+});
+
+test('提示词覆盖名词/动词两种目标的搭配形态', () => {
+  assert.match(SRC, /noun collocations are noun phrases/, '缺少名词搭配形态说明');
+  assert.match(SRC, /for a verb target, patterns must be verb patterns/, '缺少动词搭配形态说明');
+});
