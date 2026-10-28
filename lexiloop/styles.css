@@ -12,7 +12,7 @@
   --surface-2: #f8fbf9;
   --ink: #13221b;
   --ink-2: #5c6b62;
-  --ink-3: #93a29a;
+  --ink-3: #63716a;
   --line: #e2ece6;
   --ok: #14915f;
   --ok-soft: #e6f6ee;
@@ -38,7 +38,7 @@
   --surface-2: #faf9fc;
   --ink: #1b1520;
   --ink-2: #6b6478;
-  --ink-3: #9c96a8;
+  --ink-3: #6e6879;
   --line: #e8e5ef;
   --ok: var(--brand);
   --ok-soft: var(--brand-soft);
@@ -77,7 +77,7 @@
     --surface-2: #232029;
     --ink: #eeeaf4;
     --ink-2: #a9a2b5;
-    --ink-3: #7b7488;
+    --ink-3: #8b8499;
     --line: #302c38;
     --ok: var(--brand);
     --ok-soft: var(--brand-soft);
