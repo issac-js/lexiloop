@@ -2,23 +2,23 @@
  * views.js — 全部页面
  * 每个页面导出 render()（返回 HTML）与 bind()（挂载事件），由 app.js 调度。
  */
-import * as S from './store.js?v=112'
-import * as FSRS from './fsrs.js?v=112'
-import { CARD_TYPES, ENRICH_CONCURRENCY, RECOMMENDED_SETTINGS } from './config.js?v=112'
+import * as S from './store.js?v=113'
+import * as FSRS from './fsrs.js?v=113'
+import { CARD_TYPES, ENRICH_CONCURRENCY, RECOMMENDED_SETTINGS } from './config.js?v=113'
 import {
   esc, $, $$, toast, fail, ok, openModal, closeModal, confirmDialog,
   icon, LOGO_SVG, speak, fmtDateCN, relTime, STRENGTH_ZH, REGISTER_ZH,
   listEnVoices, getVoicePref, setVoicePref, getTheme, applyTheme,
-} from './ui.js?v=112'
-import * as AUTH from './cloud.js?v=112'
-import * as ENRICH from './enrich.js?v=112'
-import * as EXP from './exporter.js?v=112'
-import { parseImport, skippedLines, DEFAULT_MAX_WORDS } from './importer.js?v=112'
+} from './ui.js?v=113'
+import * as AUTH from './cloud.js?v=113'
+import * as ENRICH from './enrich.js?v=113'
+import * as EXP from './exporter.js?v=113'
+import { parseImport, skippedLines, DEFAULT_MAX_WORDS } from './importer.js?v=113'
 
 import {
   judgeTyped, reviewSemantics, looksLikeEnglishPhrase, cachedVerdict,
   HIT, ALT, WRONG, UNSURE,
-} from './judge.js?v=112'
+} from './judge.js?v=113'
 
 /* ═════════════════════════ 通用片段 ═════════════════════════ */
 
@@ -423,20 +423,19 @@ export function queueGeneration(terms) {
    而这类错误会把词性认知教错，属于必须挡住的 blocking 级。 */
 
 let reviewJob = null
-
 const REVIEW_KEY = 'lexiloop.reviewJob'
+export const REVIEW_TIMEOUT_MS = 120000
 
-/** 把复核进度存进 localStorage。
- *  任务状态在内存里，刷新页面即丢 —— 不持久化的话，"断点续跑"就是一句谎话：
- *  用户跑了 40 分钟关一下页面，全部从头再来（白烧一遍额度）。 */
 function saveReviewProgress() {
   try {
     if (!reviewJob) return
     localStorage.setItem(REVIEW_KEY, JSON.stringify({
       scope: reviewJob.scope, ids: reviewJob.ids, cursor: reviewJob.cursor,
       blocking: reviewJob.blocking, advisory: reviewJob.advisory,
+      failed: reviewJob.failed, lastError: reviewJob.lastError,
+      reviewed: reviewJob.reviewed, skipped: reviewJob.skipped, previousDone: reviewJob.previousDone,
     }))
-  } catch (e) { /* 存储不可用不影响复核本身 */ }
+  } catch (e) { /* 本机存储不可用时仍可在本会话继续 */ }
 }
 
 function clearReviewProgress() {
@@ -446,97 +445,142 @@ function clearReviewProgress() {
 function restoreReviewProgress(scope) {
   try {
     const saved = JSON.parse(localStorage.getItem(REVIEW_KEY) || 'null')
-    if (saved && saved.scope === scope && Array.isArray(saved.ids) && saved.cursor < saved.ids.length) return saved
+    if (saved && (!scope || saved.scope === scope) && ['all', 'learned'].includes(saved.scope) &&
+        Array.isArray(saved.ids) && Number.isInteger(saved.cursor) && saved.cursor >= 0 &&
+        saved.cursor < saved.ids.length) return saved
   } catch (e) {}
   return null
 }
 
+function restoredReview(saved) {
+  return { scope: saved.scope, ids: saved.ids, cursor: saved.cursor, done: saved.cursor,
+    total: saved.ids.length, blocking: saved.blocking || 0, advisory: saved.advisory || 0,
+    failed: saved.failed || 0, lastError: saved.lastError || '',
+    reviewed: saved.reviewed || 0, skipped: saved.skipped || 0,
+    previousDone: saved.previousDone == null ? saved.cursor : saved.previousDone,
+    running: false, pauseRequested: false, current: '' }
+}
+
 export function reviewStatus() {
-  if (!reviewJob) return null
-  return {
-    scope: reviewJob.scope, running: reviewJob.running,
-    done: reviewJob.done, total: reviewJob.total,
-    blocking: reviewJob.blocking, advisory: reviewJob.advisory,
-    current: reviewJob.current,
+  if (!reviewJob) {
+    const saved = restoreReviewProgress()
+    if (saved) reviewJob = restoredReview(saved)
   }
+  if (!reviewJob) return null
+  return { ...reviewJob, ids: undefined }
 }
 
 export function pauseReview(onChanged) {
   if (reviewJob && reviewJob.running) {
-    reviewJob.running = false
-    if (onChanged) onChanged('banner')
+    // 当前请求完成后再停；保持运行锁，避免暂停后立即继续造成两个循环并发。
+    reviewJob.pauseRequested = true
+    saveReviewProgress()
+    if (onChanged) onChanged('review')
   }
 }
 
-/** 开始或继续复核。scope: 'learned' = 有复习记录的词条；'all' = 全库。
- *  「已学」优先：那是用户实际接触的内容，先把它们的正确性锁死最划算。 */
+/** 保留原 localStorage 检查点格式；只在词条处理成功后推进游标。 */
 export async function startReview(scope, onChanged) {
   if (reviewJob && reviewJob.running) return
   if (!reviewJob || reviewJob.scope !== scope) {
-    // 优先恢复上次未完成的进度（跨页面会话的断点续跑）
     const saved = restoreReviewProgress(scope)
-    if (saved) {
-      reviewJob = { scope: scope, ids: saved.ids, cursor: saved.cursor, done: saved.cursor,
-        total: saved.ids.length, blocking: saved.blocking || 0, advisory: saved.advisory || 0,
-        running: true, current: '' }
-    } else {
-      const cards = S.state.cards.filter((c) => (scope === 'all' ? true : Number(c.reps) > 0))
+    if (saved) reviewJob = restoredReview(saved)
+    else {
+      const cards = S.state.cards.filter((c) => scope === 'all' || Number(c.reps) > 0)
       const ids = Array.from(new Set(cards.map((c) => c.word_id))).filter(Boolean)
-      reviewJob = { scope: scope, ids: ids, cursor: 0, done: 0, total: ids.length, blocking: 0, advisory: 0, running: true, current: '' }
+      reviewJob = { scope, ids, cursor: 0, done: 0, total: ids.length, blocking: 0,
+        advisory: 0, failed: 0, reviewed: 0, skipped: 0, previousDone: 0, lastError: '', running: false, pauseRequested: false, current: '' }
     }
-  } else {
-    reviewJob.running = true
   }
+  reviewJob.running = true
+  reviewJob.pauseRequested = false
+  reviewJob.lastError = ''
+  saveReviewProgress()
+  if (onChanged) onChanged('review')
   await runReview(onChanged)
+}
+
+async function reviewWithTimeout(entry) {
+  const controller = new AbortController()
+  let timer
+  try {
+    return await Promise.race([
+      ENRICH.reviewTerm(entry, { model: S.state.settings.llm_model || undefined, signal: controller.signal }),
+      new Promise((resolve, reject) => {
+        timer = setTimeout(() => {
+          reject(new Error('REVIEW_TIMEOUT'))
+          controller.abort()
+        }, REVIEW_TIMEOUT_MS)
+      }),
+    ])
+  } finally { clearTimeout(timer) }
 }
 
 async function runReview(onChanged) {
   const j = reviewJob
   if (!j) return
-  while (j.running && j.cursor < j.ids.length) {
-    const w = S.state.words.find((x) => x.id === j.ids[j.cursor])
-    j.cursor++
-    if (!w || !(w.payload && (w.payload.collocations || []).length)) { j.done++; continue }
-    j.current = w.lemma || w.normalized
-    if (onChanged) onChanged('banner')
-    try {
-      const r = await ENRICH.reviewTerm({
-        // 传 lemma 而非 normalized：个别词条的 normalized 是内部键（历史占位符），
-        // 不是英语表达 —— 把它喂给模型只会得到针对名称的误判
-        term: w.lemma || w.normalized,
-        senses: w.payload.senses || [],
-        collocations: w.payload.collocations || [],
-      }, { model: S.state.settings.llm_model || undefined })
-      if (r.ok) {
-        /* 已人工修正过的（corrected）不被复核覆盖 ——
-           人的结论优先于模型的：corrected 意味着内容已经改过，
-           再被模型判一次只会把"已修正"这个更重要的事实冲掉（实测踩到过）。 */
-        if (w.verification_status === 'corrected') { j.done++; continue }
-        if (r.severity === 'blocking') {
-          // 会教错的内容：挡住（不进学习与练习队列）
-          await S.putWordVerification(w.normalized, 'flagged',
-            r.issues.join('；').slice(0, 500) || r.reason || '复核判定为 blocking')
-          j.blocking++
-        } else if (r.severity === 'advisory' || r.missing.length) {
-          // 主体可用：记录建议，照常学习 —— 不因一条搭配欠佳就挡住整条词条
-          const note = r.issues.concat(r.missing.map((m) => '缺义项：' + m)).join('；').slice(0, 500)
-          await S.putWordVerification(w.normalized, 'reviewed', note)
-          j.advisory++
-        }
-        // severity=none 且无缺义项 → 不动：不把"没发现问题"写成"已核验"
+  try {
+    while (j.running && !j.pauseRequested && j.cursor < j.ids.length) {
+      const w = S.state.words.find((x) => x.id === j.ids[j.cursor])
+      j.current = w ? (w.lemma || w.normalized) : ''
+      if (onChanged) onChanged('review')
+      if (!w) {
+        j.lastError = '当前词条尚未加载，请同步词库后继续。'
+        throw new Error('REVIEW_WORD_MISSING')
       }
-    } catch (e) {
-      /* 单条失败不中断整个任务 */
+      if (w && w.payload && (w.payload.collocations || []).length && w.verification_status !== 'corrected') {
+        let r
+        try {
+          r = await reviewWithTimeout({ term: w.lemma || w.normalized,
+            senses: w.payload.senses || [], collocations: w.payload.collocations || [] })
+        } catch (e) {
+          j.lastError = e && e.message === 'REVIEW_TIMEOUT'
+            ? '模型等待超过 2 分钟，已停止等待；请稍后继续。'
+            : '模型请求失败，请检查网络、模型配置或额度后继续。'
+          throw e
+        }
+        if (!r || !r.ok) {
+          j.lastError = '模型返回的复核结果无法解析，请稍后继续。'
+          throw new Error('REVIEW_INVALID_RESULT')
+        }
+        // 人工修正可能在等待期间发生，写回前再检查一次。
+        if (w.verification_status !== 'corrected') {
+          try {
+            if (r.severity === 'blocking') {
+              await S.putWordVerification(w.normalized, 'flagged',
+                r.issues.join('；').slice(0, 500) || r.reason || '复核判定为 blocking')
+              j.blocking++
+            } else if (r.severity === 'advisory' || r.missing.length) {
+              const note = r.issues.concat(r.missing.map((m) => '缺义项：' + m)).join('；').slice(0, 500)
+              await S.putWordVerification(w.normalized, 'reviewed', note)
+              j.advisory++
+            }
+          } catch (e) {
+            j.lastError = '复核标记保存失败，当前词条未计为完成；请稍后继续。'
+            throw e
+          }
+        }
+        j.reviewed++
+      } else {
+        j.skipped++
+      }
+      j.cursor++
+      j.done = j.cursor
+      saveReviewProgress()
+      if (onChanged) onChanged('review')
     }
-    j.done++
-    saveReviewProgress()
-    if (onChanged) onChanged('banner')
+  } catch (e) {
+    j.failed++
+    if (!j.lastError) j.lastError = '复核中断，当前词条保留在断点，可稍后继续。'
+  } finally {
+    j.running = false
+    j.pauseRequested = false
+    if (!j.lastError) j.current = ''
+    if (j.cursor >= j.ids.length) clearReviewProgress()
+    else saveReviewProgress()
+    try { S.saveLocal() } catch (e) {}
+    if (onChanged) onChanged('review')
   }
-  j.running = false
-  j.current = ''
-  if (j.cursor >= j.ids.length) clearReviewProgress()
-  try { S.saveLocal() } catch (e) {}
-  if (onChanged) onChanged('banner')
 }
 
 export function pauseJob(onChanged) {
@@ -1113,7 +1157,7 @@ export function sessionProgress() {
 export {
   normalizeAns, judgeTyped, looksLikeEnglishPhrase, reviewSemantics, cachedVerdict,
   clearJudgeCache, HIT, ALT, WRONG, UNSURE,
-} from './judge.js?v=112'
+} from './judge.js?v=113'
 
 const REG_ZH = { formal: '正式', neutral: '中性', spoken: '口语', informal: '非正式' }
 
@@ -3297,23 +3341,64 @@ function verifyLabel(w) {
 function reviewHint() {
   const st = reviewStatus()
   if (!st) return '未开始'
-  if (st.running) return '进行中'
-  return st.done >= st.total && st.total > 0 ? '已完成' : '可继续'
+  if (st.running) return st.pauseRequested ? '正在暂停' : '进行中'
+  if (st.lastError) return '需重试'
+  return st.done >= st.total ? '已完成' : '可继续'
 }
 
 function reviewProgressHTML() {
   const st = reviewStatus()
-  if (!st || !st.total) return ''
-  const pct = Math.round((st.done / st.total) * 100)
-  return '<div class="tiny" style="margin:0 0 10px;line-height:1.7;">' +
-    (st.running ? '复核中 ' : '已暂停 ') + st.done + ' / ' + st.total + '（' + pct + '%）' +
+  if (!st) return ''
+  const pct = st.total ? Math.round(st.done / st.total * 100) : 0
+  const label = st.running ? (st.pauseRequested ? '正在暂停 ' : '复核中 ') :
+    st.lastError ? '复核中断 ' : st.done >= st.total ? '已完成 ' : '已暂停 '
+  return '<div class="tiny" role="status" aria-live="polite" style="margin:0 0 10px;line-height:1.7;">' +
+    label + st.done + ' / ' + st.total + ' 个词条（' + pct + '%，已处理）' +
     (st.current ? '　·　' + esc(st.current) : '') + '<br>' +
-    '已标记：会教错 ' + st.blocking + ' 条　｜　有改进建议 ' + st.advisory + ' 条</div>'
+    '实际复核 ' + st.reviewed + ' 条，跳过 ' + st.skipped + ' 条（已人工修正或无搭配内容）' +
+    (st.previousDone ? '<br>继承旧版已处理进度 ' + st.previousDone + ' 条；历史成功/跳过明细未记录。' : '') + '<br>' +
+    '已标记：会教错 ' + st.blocking + ' 条　｜　有改进建议 ' + st.advisory + ' 条' +
+    (st.failed ? '　｜　失败尝试 ' + st.failed + ' 次（不计完成）' : '') +
+    (st.pauseRequested ? '<br>等待当前词条处理结束后暂停，请勿刷新页面。' : '') +
+    (st.lastError ? '<br><span style="color:var(--bad);">' + esc(st.lastError) + '</span>' : '') + '</div>'
 }
 
 function reviewJobRunning() {
   const st = reviewStatus()
   return !!(st && st.running)
+}
+
+function reviewPanelHTML() {
+  const st = reviewStatus()
+  const running = !!(st && st.running)
+  const resume = st && !running && st.done < st.total
+  return reviewProgressHTML() + '<div class="btn-group">' +
+    '<button class="btn' + (running ? '' : ' primary') + '" id="me-review-learned"' +
+    (running ? ' disabled' : '') + '>' + (resume && st.scope === 'learned' ? '继续复核已学词条' : '复核已学词条') + '</button>' +
+    '<button class="btn" id="me-review-all"' + (running ? ' disabled' : '') + '>' +
+    (resume && st.scope === 'all' ? '继续复核我的全部词条' : '复核我的全部词条') + '</button>' +
+    (running ? '<button class="btn sm" id="me-review-pause"' + (st.pauseRequested ? ' disabled' : '') + '>' +
+      (st.pauseRequested ? '正在暂停…' : '暂停') + '</button>' : '') + '</div>'
+}
+
+function bindReviewControls(onChanged) {
+  for (const scope of ['learned', 'all']) {
+    const btn = $('#me-review-' + scope)
+    if (btn) btn.onclick = () => {
+      startReview(scope, onChanged).catch(() => fail('复核中断，请稍后继续'))
+    }
+  }
+  const pause = $('#me-review-pause')
+  if (pause) pause.onclick = () => pauseReview(onChanged)
+}
+
+export function refreshReviewPanel(onChanged) {
+  const panel = $('#review-panel')
+  if (!panel) return
+  panel.innerHTML = reviewPanelHTML()
+  const hint = $('#review-hint')
+  if (hint) hint.textContent = reviewHint()
+  bindReviewControls(onChanged)
 }
 
 export function renderMe() {
@@ -3496,21 +3581,15 @@ export function renderMe() {
     '</div>' +
 
     '<div class="card">' +
-    '<div class="card-head"><h2>内容复核</h2><span class="hint">' + esc(reviewHint()) + '</span></div>' +
+    '<div class="card-head"><h2>内容复核</h2><span class="hint" id="review-hint">' + esc(reviewHint()) + '</span></div>' +
     '<p class="muted" style="margin:0 0 10px;">让模型逐条检查搭配是否地道、语域是否合适、义项是否齐全，' +
     '并找出<b>词性标错</b>这类会教错的内容。</p>' +
     '<p class="tiny" style="margin:0 0 12px;">分两档处理：<b>会教错</b>的（词性错、虚构用法）会被挡在队列外；' +
     '<b>内容可用但不完美</b>的（个别搭配欠佳、义项不全）只记录，照常学习 —— ' +
     '不因为一条搭配欠佳就挡住整条词条。</p>' +
-    reviewProgressHTML() +
-    '<div class="btn-group">' +
-    '<button class="btn' + (reviewJobRunning() ? '' : ' primary') + '" id="me-review-learned"' +
-    (reviewJobRunning() ? ' disabled' : '') + '>复核已学词条</button>' +
-    '<button class="btn" id="me-review-all"' + (reviewJobRunning() ? ' disabled' : '') + '>复核全库</button>' +
-    (reviewJobRunning() ? '<button class="btn sm" id="me-review-pause">暂停</button>' : '') +
-    '</div>' +
-    '<p class="tiny" style="margin:10px 0 0;">每条约 2 秒。已学词条约 3 分钟；全库约 50 分钟。' +
-    '可随时暂停，下次继续会从断点接着跑。复核只写核验标记，不改内容。</p>' +
+    '<div id="review-panel">' + reviewPanelHTML() + '</div>' +
+    '<p class="tiny" style="margin:10px 0 0;">范围按本账号卡片关联的词条去重，一个词条可有多张卡；不扩展到共享词库的其他词条。耗时取决于模型和词条数量，进度会实时更新。' +
+    '暂停会等待当前词条结束；刷新或关闭页面会中断任务，下次点击继续。复核只写核验标记，不改内容。</p>' +
     '</div>' +
 
     '<div class="card">' +
@@ -3539,22 +3618,7 @@ export function renderMe() {
 }
 
 export function bindMe(onChanged, go, onSignOut) {
-  // 内容复核：两个范围按钮 + 暂停
-  const rl = $('#me-review-learned')
-  if (rl) rl.onclick = () => {
-    toast('开始复核已学词条（约 3 分钟），期间可以继续做别的', 'ok')
-    startReview('learned', onChanged).catch(() => toast('复核中断，可再次点击继续', 'err'))
-  }
-  const ra = $('#me-review-all')
-  if (ra) ra.onclick = () => {
-    toast('开始复核全库（约 50 分钟），可随时暂停', 'ok')
-    startReview('all', onChanged).catch(() => toast('复核中断，可再次点击继续', 'err'))
-  }
-  const rp = $('#me-review-pause')
-  if (rp) rp.onclick = () => {
-    pauseReview(onChanged)
-    toast('已暂停，下次点复核会从断点继续', 'ok')
-  }
+  bindReviewControls(onChanged)
 
   // 测试模式开关：切换后立即重绘，顶部提示条会同步出现/消失
   const tm = $('#me-test-mode')

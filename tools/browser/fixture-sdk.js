@@ -86,7 +86,20 @@
   } };
   const auth = { getSession: async () => ({ data: { user: { id: 'browser-fixture-' + scenario, email: 'qa@example.invalid' } }, error: null }),
     onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }) };
-  window.WorkBuddyCloud = { createWorkBuddyCloud: () => ({ database, auth, llm: { models: { list: async () => [] } } }) };
+  // Explicit synthetic responses: never contact a billable model.
+  const reviewMock = { mode: 'hold', calls: 0, releases: [] };
+  const llm = { models: { list: async () => [{ id: 'qa-synthetic-model', name: 'QA synthetic model' }] }, chat: { completions: {
+    create: async function* () {
+      reviewMock.calls++;
+      if (reviewMock.mode === 'hold') await new Promise((resolve) => reviewMock.releases.push(resolve));
+      if (reviewMock.mode === 'error') throw Error('Synthetic model failure');
+      const content = reviewMock.mode === 'invalid' ? 'not json' :
+        JSON.stringify({ pos_ok: true, severity: 'none', collocations: [], missing_senses: [] });
+      yield { choices: [{ delta: { content } }] };
+    },
+  } } };
+  window.WorkBuddyCloud = { createWorkBuddyCloud: () => ({ database, auth, llm }) };
+  window.__reviewMock = reviewMock;
   window.__QA = { snapshot: () => clone(data), advance: (ms) => { offset += ms; }, reset(name) {
     scenario = name; offset = fixed - NativeDate.now();
     for (const k of Object.keys(localStorage)) if (k.startsWith('lexiloop.')) localStorage.removeItem(k);

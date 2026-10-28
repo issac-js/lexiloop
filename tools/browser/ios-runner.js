@@ -39,6 +39,23 @@ trigger.onclick = async () => {
     }
     return measurements;
   });
+  await check('review panel updates without navigation, preserves settings and pauses safely', async () => {
+    await tap('[data-tab=me]');
+    const setting = document.querySelector('#st-new'); setting.value = '9';
+    window.__reviewMock.mode = 'hold';
+    await tap('#me-review-all');
+    assert(document.querySelector('#review-panel').textContent.includes('复核中'), 'No live review progress');
+    assert(document.querySelector('#me-review-all').disabled, 'Duplicate review allowed');
+    assert(setting === document.querySelector('#st-new') && setting.value === '9', 'Settings were replaced');
+    await tap('#me-review-pause');
+    assert(document.querySelector('#review-panel').textContent.includes('正在暂停'), 'No pause feedback');
+    window.__reviewMock.releases.shift()(); await wait(150);
+    assert(document.querySelector('#review-panel').textContent.includes('已暂停'), 'Pause did not finish');
+    window.__reviewMock.mode = 'error'; await tap('#me-review-all');
+    assert(document.querySelector('#review-panel').textContent.includes('模型请求失败'), 'Failure was hidden');
+    window.__reviewMock.mode = 'success'; await tap('#me-review-all');
+    assert(document.querySelector('#review-hint').textContent === '已完成', 'Completion did not refresh');
+  });
   await check('real Safari DOM new-card failure and consolidation flow persists across sync', async () => {
     await reset('learning');
     const answer = async (grade, independent) => {

@@ -50,6 +50,7 @@ def main():
     run('node', '--test', 'tools/live-checks.test.js')
     run('node', '--test', 'tools/learning-schedule.test.js')
     run('node', '--test', 'tools/focus-practice.test.js')
+    run('node', '--test', 'tools/content-review.test.js')
     # Import without writing __pycache__ into the served directory.
     sys.dont_write_bytecode = True
     spec = importlib.util.spec_from_file_location('static_server', APP / 'server.py')
