@@ -48,6 +48,7 @@ def main():
     run('node', 'tools/qa-fsrs.js')
     run('node', '--test', 'tools/goal-metrics.test.js')
     run('node', '--test', 'tools/color-contrast.test.js')
+    run('node', '--test', 'tools/enrich-prompt.test.js')
     run('node', '--test', 'tools/live-checks.test.js')
     run('node', '--test', 'tools/learning-schedule.test.js')
     run('node', '--test', 'tools/focus-practice.test.js')

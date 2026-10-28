@@ -7,7 +7,7 @@
  *   2. 结构层面：强制 JSON 输出，字段枚举固定
  *   3. 校验层面：本地规则闸门，不通过的一律丢弃（宁可少，不可假）
  */
-import { chatText, pickModelAfter } from './cloud.js?v=114'
+import { chatText, pickModelAfter } from './cloud.js?v=115'
 
 export const PROMPT_VERSION = 'colloc-v2'
 
@@ -62,7 +62,14 @@ function buildUserPrompt(term) {
     'Limits — respect them strictly, this keeps the answer short:',
     '- collocations: 4 to 5 items, ordered by usefulness',
     '- examples: exactly 1 per collocation',
-    '- senses: at most 2',
+    /* 只写单一词性会造成系统性缺义：线上抽样 20 条"缺义项"有 6 条是
+       layer / detour / veto / sanction / fare / doodle 这类"另一种词性整条没写"，
+       学习者遇到名词用法时词典里查不到。所以这里必须显式要求覆盖两侧。 */
+    '- senses: at most 2, but cover every part of speech this term genuinely has at B1–B2 level: ' +
+    'if it is both noun and verb (e.g. layer, detour, veto, sanction, fare, doodle), ' +
+    'include at least one sense per part of speech; never output only one part of speech ' +
+    'when another one is common with the same spelling',
+    '- "pos" must list every part of speech that appears in "senses" — no more, no less',
     '- confusables: at most 2',
     '- word_family: at most 4',
     '- strength "strong" only when native speakers treat it as a fixed chunk',
