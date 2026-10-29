@@ -65,6 +65,16 @@ async function main() {
             await layout();
           }
         });
+        await check('recorded achievement explains 39 due cards separately from 88% current progress', async () => {
+          await open('goal-recorded'); await tab('today');
+          assert.match(await page.locator('#goal-status-note').innerText(), /今日已达标，当前仍有 39 张到期卡片/);
+          await page.getByRole('img', { name: '当前任务完成度 88%', exact: true }).waitFor();
+          assert.match(await page.locator('#main').innerText(), /复习 67 \/ 106/);
+          assert.match(await page.locator('#start-study').innerText(), /39 张/);
+          assert.equal(await page.locator('#start-study').isEnabled(), true);
+          await layout();
+          await page.screenshot({ path: path.join(OUT, variant.name + '-goal-recorded.png'), fullPage: true });
+        });
         await check('settings recommendation, saved value and refresh', async () => {
           await open(); await tab('me');
           assert.equal(await page.locator('#st-stepdays').inputValue(), '7');

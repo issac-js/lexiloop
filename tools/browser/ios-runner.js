@@ -39,6 +39,15 @@ trigger.onclick = async () => {
     }
     return measurements;
   });
+  await check('recorded achievement and 39 due cards are explained separately at 88% current progress', async () => {
+    await reset('goal-recorded');
+    const note = document.querySelector('#goal-status-note');
+    assert(note && note.textContent.includes('今日已达标，当前仍有 39 张到期卡片'), 'Missing due-card explanation');
+    assert(document.querySelector('svg[aria-label="当前任务完成度 88%"]'), 'Wrong current progress');
+    assert(document.querySelector('#start-study').textContent.includes('39 张'), 'Due queue count differs');
+    assert(document.documentElement.scrollWidth <= innerWidth + 1, 'Goal card overflows');
+    await reset('normal');
+  });
   await check('review panel updates without navigation, preserves settings and pauses safely', async () => {
     await tap('[data-tab=me]');
     const setting = document.querySelector('#st-new'); setting.value = '9';
