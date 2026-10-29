@@ -15,22 +15,29 @@
   let data;
   function fresh(name) {
     const cards = [], words = [];
-    const count = name === 'large' ? 1205 : name === 'learning' ? 1 : 12;
+    const count = name === 'large' ? 1205 : name === 'learning' ? 1 : name === 'goal-recorded' ? 106 : 12;
     for (let i = 1; i <= count; i++) {
       const term = i === 1 ? 'make arrangements for a follow-up appointment' : 'follow up ' + i;
       words.push({ id: i, normalized: term, lemma: term, verification_status: 'verified', payload: {
         senses: [{ pos: 'phrase', def_zh: '安排后续预约' + i, def_en: 'arrange a follow-up appointment' }],
         collocations: [{ pattern: term, zh: '安排后续预约', examples: [{ en: 'Please ' + term + ' tomorrow.', zh: '请安排后续预约。' }] }],
       } });
-      const isNew = name === 'learning' || (name !== 'large' && i > 6);
+      const isNew = name === 'learning' || (!['large', 'goal-recorded'].includes(name) && i > 6);
       cards.push({ id: i, word_id: i, card_type: 'recognition', deck: '默认词单', status: isNew ? 'new' : 'review',
         due: new Date(Date.now() - (name === 'overdue' && i === 1 ? 2 * 86400000 : 60000)).toISOString(),
         stability: isNew ? 0 : 5, difficulty: 5, reps: isNew ? 0 : 5, lapses: 0, last_review_at: new Date(Date.now() - 3 * 86400000).toISOString() });
     }
-    return { cards, words, reviews: [], goals: [], events: [], stats: [], ranges: [],
+    const recorded = name === 'goal-recorded';
+    if (recorded) for (const c of cards.slice(0, 67)) {
+      c.due = new Date(Date.now() + 86400000).toISOString(); c.last_review_at = new Date().toISOString();
+    }
+    return { cards, words, reviews: [], goals: recorded ? [{ day: today() }] : [], events: [],
+      stats: recorded ? [{ reviewed_on: today(), total: 67, new_words: 8 }] : [], ranges: [],
       settings: { daily_new: 8, daily_max_review: name === 'quota' ? 2 : 300, target_retention: .9,
         extra: { learn_step_minutes: 10, learn_step_days: name === 'normal' ? 7 : 1,
-          rest_weekday: '', goal_include_test: false, pause_new_when_overdue: true, auto_credit: true } } };
+          rest_weekday: '', goal_include_test: recorded, last_test_at: recorded ? Date.now() : null,
+          day_plan: recorded ? { date: today(), due: 106, newGoal: 8 } : null,
+          pause_new_when_overdue: true, auto_credit: true } } };
   }
   try { data = JSON.parse(localStorage.getItem(key())); } catch (_) { /* new fixture */ }
   if (!data) data = fresh(scenario);

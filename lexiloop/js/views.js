@@ -2,23 +2,23 @@
  * views.js — 全部页面
  * 每个页面导出 render()（返回 HTML）与 bind()（挂载事件），由 app.js 调度。
  */
-import * as S from './store.js?v=116'
-import * as FSRS from './fsrs.js?v=116'
-import { CARD_TYPES, ENRICH_CONCURRENCY, RECOMMENDED_SETTINGS } from './config.js?v=116'
+import * as S from './store.js?v=117'
+import * as FSRS from './fsrs.js?v=117'
+import { CARD_TYPES, ENRICH_CONCURRENCY, RECOMMENDED_SETTINGS } from './config.js?v=117'
 import {
   esc, $, $$, toast, fail, ok, openModal, closeModal, confirmDialog,
   icon, LOGO_SVG, speak, fmtDateCN, relTime, STRENGTH_ZH, REGISTER_ZH,
   listEnVoices, getVoicePref, setVoicePref, getTheme, applyTheme,
-} from './ui.js?v=116'
-import * as AUTH from './cloud.js?v=116'
-import * as ENRICH from './enrich.js?v=116'
-import * as EXP from './exporter.js?v=116'
-import { parseImport, skippedLines, DEFAULT_MAX_WORDS } from './importer.js?v=116'
+} from './ui.js?v=117'
+import * as AUTH from './cloud.js?v=117'
+import * as ENRICH from './enrich.js?v=117'
+import * as EXP from './exporter.js?v=117'
+import { parseImport, skippedLines, DEFAULT_MAX_WORDS } from './importer.js?v=117'
 
 import {
   judgeTyped, reviewSemantics, looksLikeEnglishPhrase, cachedVerdict,
   HIT, ALT, WRONG, UNSURE,
-} from './judge.js?v=116'
+} from './judge.js?v=117'
 
 /* ═════════════════════════ 通用片段 ═════════════════════════ */
 
@@ -111,8 +111,8 @@ function goalCard() {
   const testDays = lastTest ? Math.floor((Date.now() - lastTest) / 86400000) : null
   const testDone = !needTest || (testDays !== null && testDays < 7)
 
-  /* 进度环必须和徽章同口径（三项等权：复习 / 新学 / 抽测；休息日不纳入新学）。
-     旧实现只按复习完成度算，复习做完而抽测没做时环显示 100%、徽章却说还差一次抽测。 */
+  /* 进度环显示当前任务（三项等权；休息日不纳入新学）。
+     达标徽章另表示当天已取得的记录：后来有卡到期时保留记录，并明确解释差异。 */
   const gm = S.goalCompletion({
     doneCards: doneCards, dueNow: dueNow, doneNew: doneNew, newGoal: goalNew,
     needTest: needTest, testDone: testDone, isRest: isRest,
@@ -131,17 +131,25 @@ function goalCard() {
   ]
   const R = 26, C = 2 * Math.PI * R
   const gs = S.goalStats(30)
+  const quotaExhausted = S.dailyReviewAllowance() === 0
 
   const badge = gp.met
-    ? '<span class="chip strong">今日达标 ✓</span>'
+    ? '<span class="chip strong">今日已达标 ✓</span>'
     : '<span class="chip">今日还差 ' +
       (!gp.reviewMet ? dueNow + ' 张复习'
         : (!gp.newMet && !isRest) ? (gp.plan.newGoal - gp.doneNew) + ' 个新词'
           : '一次抽测') + '</span>'
+  const goalNote = gp.met && dueNow > 0
+    ? '今日已达标，当前仍有 ' + dueNow + ' 张到期卡片。' +
+      (quotaExhausted ? '今日作答额度已用完，明天继续。' : '可按今日剩余额度继续复习。') +
+      '已取得的达标记录会保留，当前任务进度随到期卡片更新。'
+    : gp.recorded && !gp.currentMet
+      ? '今日达标记录已保留；当前任务进度随新学目标和抽测有效期更新。'
+      : ''
 
   return '<div class="card tight">' +
     '<div class="row" style="gap:14px;align-items:center;">' +
-    '<svg width="66" height="66" viewBox="0 0 66 66" role="img" aria-label="今日目标完成度 ' + pct + '%">' +
+    '<svg width="66" height="66" viewBox="0 0 66 66" role="img" aria-label="当前任务完成度 ' + pct + '%">' +
     '<circle cx="33" cy="33" r="' + R + '" fill="none" stroke="var(--line)" stroke-width="7"/>' +
     '<circle cx="33" cy="33" r="' + R + '" fill="none" stroke="var(--brand)" stroke-width="7" ' +
     'stroke-linecap="round" stroke-dasharray="' + C.toFixed(1) + '" ' +
@@ -166,13 +174,14 @@ function goalCard() {
         '</span></div>'
       : '') +
     // 口径写出来：环是三项平均，不是记忆强度 —— 否则 87% 容易被读成"记住了 87%"
-    '<p class="tiny" style="margin:8px 0 0;">目标完成度 = 复习 / 新学 / 抽测 三项平均' +
+    '<p class="tiny" style="margin:8px 0 0;">当前任务完成度 = 复习 / 新学 / 抽测 三项平均' +
     (needTest ? '' : '（未启用抽测要求）') + '，不等于记忆保持率</p>' +
     '<div class="row between" style="margin-top:6px;align-items:center;">' + badge +
     '<span class="tiny" title="达标连胜：三项全部达成的连续天数（和上面的连续学习天数不是一回事）">' +
     '达标连胜 ' + gs.streak + ' 天　｜　近 30 天达标 ' + gs.hit + '/' + gs.span +
     '（' + gs.rate + '%）</span></div>' +
     '</div></div>' +
+    (goalNote ? '<p class="tiny" id="goal-status-note" style="margin:10px 0 0;">' + goalNote + '</p>' : '') +
     // 休息日只说清楚规则，不制造焦虑：今天本来就该少做
     (isRest
       ? '<p class="tiny" style="margin:10px 0 0;">今天是休息日：只复习、不引新词，' +
@@ -1157,7 +1166,7 @@ export function sessionProgress() {
 export {
   normalizeAns, judgeTyped, looksLikeEnglishPhrase, reviewSemantics, cachedVerdict,
   clearJudgeCache, HIT, ALT, WRONG, UNSURE,
-} from './judge.js?v=116'
+} from './judge.js?v=117'
 
 const REG_ZH = { formal: '正式', neutral: '中性', spoken: '口语', informal: '非正式' }
 

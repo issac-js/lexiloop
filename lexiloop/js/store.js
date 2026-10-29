@@ -5,11 +5,11 @@
  * 再异步推到云端；换设备登录时从云端整体拉回。单用户跨设备不会并发改同一张卡，
  * 因此采用「以云端为权威 + 本地乐观更新」的简单模型。
  */
-import { db, getSession } from './cloud.js?v=116'
-import { LS_KEYS, DEFAULT_SETTINGS } from './config.js?v=116'
-import * as FSRS from './fsrs.js?v=116'
+import { db, getSession } from './cloud.js?v=117'
+import { LS_KEYS, DEFAULT_SETTINGS } from './config.js?v=117'
+import * as FSRS from './fsrs.js?v=117'
 /* 目标完成度的纯算术单独成模块，方便离线单测（工具页与今日页共用同一口径）。 */
-export { goalCompletion } from './goal-metrics.js?v=116'
+export { goalCompletion } from './goal-metrics.js?v=117'
 
 export const state = {
   booted: false,
@@ -1144,9 +1144,10 @@ export function goalProgress() {
   const testMet = !needTest || (Date.now() - lastTest) < 7 * 86400000
   /* 已记账的达标当天不回退：中途有新卡到期时不把今天的达标翻回未达标。 */
   const recorded = !!goalDays()[today]
+  const currentMet = reviewMet && newMet && testMet
   return {
     plan, doneReview, doneCards, dueNow, dueToday, doneNew, reviewMet, newMet, testMet, needTest,
-    met: recorded || (reviewMet && newMet && testMet), today,
+    recorded, currentMet, met: recorded || currentMet, today,
   }
 }
 

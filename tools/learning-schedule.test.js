@@ -274,6 +274,50 @@ test('overdue cards pause fresh words; same-day due cards, filters and suspended
   assert.equal(S.newAllowance(), 8);
 }));
 
+test('recorded achievement survives 39 newly due cards while the current task stays at 88%', () => withApp(({ S, V, card, seed }) => {
+  const now = Date.now(), today = S.todayKey();
+  seed(Array.from({ length: 106 }, (_, i) => ({ ...card(i + 1, 'review', now + DAY),
+    last_review_at: i < 67 ? now : now - DAY })));
+  S.state.daily = [{ reviewed_on: today, total: 67, new_words: 8 }];
+  Object.assign(S.state.settings, { goal_include_test: true, last_test_at: now });
+  assert.equal(S.markGoalIfMet(), true);
+  assert.equal(S.goalStats(30).hit, 1);
+  for (const c of S.state.cards.slice(67)) c.due = now - 1;
+  const gp = S.goalProgress(), html = V.renderToday();
+  assert.equal(gp.met, true);
+  assert.equal(gp.recorded, true);
+  assert.equal(gp.currentMet, false);
+  assert.equal(gp.dueNow, 39);
+  assert.match(html, /复习 67 \/ 106/);
+  assert.match(html, /当前任务完成度 88%/);
+  assert.match(html, /今日已达标，当前仍有 39 张到期卡片/);
+  assert.match(html, /开始学习（39 张）/);
+  assert.equal(S.markGoalIfMet(), false);
+  assert.equal(S.goalStats(30).hit, 1);
+  assert.equal(S.goalStats(30).streak, 1);
+  for (const c of S.state.cards.slice(67)) c.due = now + DAY;
+  const cleared = V.renderToday();
+  assert.match(cleared, /当前任务完成度 100%/);
+  assert.doesNotMatch(cleared, /id="goal-status-note"/);
+}));
+
+test('unrecorded pending tasks remain unmet; recorded due cards respect the exhausted daily cap', () => withApp(({ S, V, card, seed }) => {
+  const today = S.todayKey();
+  seed([card(1)]);
+  S.state.daily = [{ reviewed_on: today, total: 0, new_words: 8 }];
+  assert.equal(S.goalProgress().met, false);
+  assert.match(V.renderToday(), /今日还差 1 张复习/);
+  assert.doesNotMatch(V.renderToday(), /今日已达标/);
+  S.state.settings.goal_days = { [today]: true };
+  S.state.settings.daily_max_review = 1;
+  S.state.daily[0].total = 1;
+  const html = V.renderToday();
+  assert.match(html, /当前仍有 1 张到期卡片/);
+  assert.match(html, /今日作答额度已用完，明天继续/);
+  assert.doesNotMatch(html, /可按今日剩余额度继续复习/);
+  assert.equal(S.buildQueue().length, 0);
+}));
+
 test('goals and rendered pages explain paused new words and an exhausted cap without false completion', () => withApp(({ S, V, card, seed }) => {
   seed([card(1, 'review', Date.now() - 2 * DAY), card(2, 'new')]);
   S.state.settings.daily_max_review = 1;
