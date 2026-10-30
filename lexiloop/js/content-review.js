@@ -59,6 +59,7 @@ export function createReviewRunner(deps) {
       concurrency: 2, lastError: '', ...saved, running: false, pauseRequested: false, active: [], current: '' }
     j.completed = [...new Set(Array.isArray(saved.completed) ? saved.completed : saved.ids.slice(0, saved.cursor || 0))]
       .filter(id => j.ids.includes(id))
+    j.total = j.ids.length
     j.done = j.completed.length
     j.cursor = j.ids.findIndex(id => !j.completed.includes(id))
     if (j.cursor < 0) j.cursor = j.ids.length

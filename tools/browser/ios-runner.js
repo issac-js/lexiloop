@@ -63,6 +63,7 @@ trigger.onclick = async () => {
     window.__reviewMock.mode = 'error'; await tap('#me-review-all');
     assert(document.querySelector('#review-panel').textContent.includes('模型请求失败'), 'Failure was hidden');
     window.__reviewMock.mode = 'success'; await tap('#me-review-all');
+    for (let n = 0; n < 50 && document.querySelector('#review-hint').textContent !== '已完成'; n++) await wait(100);
     assert(document.querySelector('#review-hint').textContent === '已完成', 'Completion did not refresh');
   });
   await check('human correction shows a diff and preserves card scheduling', async () => {

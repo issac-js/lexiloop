@@ -25,9 +25,9 @@ async function fixture(run,saved){
 }
 test('two workers pause safely; unique words, model reports and protected corrections are preserved',()=>fixture(async({S,V,E,good,until,storage,key,C})=>{
  S.state.words[2].verification_status='corrected';const payloads=JSON.stringify(S.state.words.map(w=>w.payload)),cards=JSON.stringify(S.state.cards);
- const task=V.startReview('all');await until(()=>E.requests.length===2);V.pauseReview();await V.startReview('all');assert.equal(E.requests.length,2);
+ const task=V.startReview('all');await until(()=>E.requests.length===2);assert.equal(V.reviewStatus().total,3);V.pauseReview();await V.startReview('all');assert.equal(E.requests.length,2);
  E.requests[1].resolve(good);await until(()=>V.reviewStatus().done===1);assert.equal(JSON.parse(storage.get(key())).cursor,0);
- E.requests[0].resolve(good);await task;assert.equal(V.reviewStatus().done,2);assert.equal(V.reviewStatus().running,false);
+ E.requests[0].resolve(good);await task;assert.equal(V.reviewStatus().done,2);assert.equal(V.reviewStatus().running,false);assert.match(V.renderMe(),/2 \/ 3 个词条/);assert.doesNotMatch(V.renderMe(),/NaN 分钟|undefined 个词条/);
  await V.startReview('all');assert.equal(V.reviewStatus().done,3);assert.equal(V.reviewStatus().protected,1);assert.equal(V.reviewStatus().reviewed,2);
  assert.equal(JSON.stringify(S.state.words.map(w=>w.payload)),payloads);assert.equal(JSON.stringify(S.state.cards),cards);
  assert.equal(C.parseReviewReport(S.state.words[0].verify_note).severity,'none');
