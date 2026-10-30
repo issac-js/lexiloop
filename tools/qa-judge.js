@@ -96,8 +96,8 @@ async function unitJudge() {
     fm({ expected: 'complimented', given: 'complimented', sentence: 'She ________ him.' }) === false);
   add('★ 词形变体：不规则屈折（deal / dealt）不硬判',
     fm({ expected: 'deal', given: 'dealt', sentence: 'They ___ with it.' }) === false);
-  add('★ 词形变体：短语不硬判（multi-word）',
-    fm({ expected: 'deal with', given: 'deals with', sentence: 'She ___ it.' }) === false);
+  add('★ 词形变体：短语仅一个词形变化时走整句复核，不直接判对',
+    fm({ expected: 'deal with', given: 'deals with', sentence: 'She ___ it.' }) === true);
 
   // ── 语义复核（stub 掉 LLM，只验协议与降级）──
   add('looksLikeEnglishPhrase：address 值得复核', J.looksLikeEnglishPhrase('address') === true);

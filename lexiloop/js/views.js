@@ -2,25 +2,25 @@
  * views.js — 全部页面
  * 每个页面导出 render()（返回 HTML）与 bind()（挂载事件），由 app.js 调度。
  */
-import * as S from './store.js?v=118'
-import * as FSRS from './fsrs.js?v=118'
-import { CARD_TYPES, ENRICH_CONCURRENCY, RECOMMENDED_SETTINGS } from './config.js?v=118'
+import * as S from './store.js?v=119'
+import * as FSRS from './fsrs.js?v=119'
+import { CARD_TYPES, ENRICH_CONCURRENCY, RECOMMENDED_SETTINGS } from './config.js?v=119'
 import {
   esc, $, $$, toast, fail, ok, openModal, closeModal, confirmDialog,
   icon, LOGO_SVG, speak, fmtDateCN, relTime, STRENGTH_ZH, REGISTER_ZH,
   listEnVoices, getVoicePref, setVoicePref, getTheme, applyTheme,
-} from './ui.js?v=118'
-import * as AUTH from './cloud.js?v=118'
-import * as ENRICH from './enrich.js?v=118'
-import * as EXP from './exporter.js?v=118'
-import { createReviewRunner, parseReviewReport, auditEntry, REVIEW_TIMEOUT_MS } from './content-review.js?v=118'
-export { REVIEW_TIMEOUT_MS } from './content-review.js?v=118'
-import { parseImport, skippedLines, DEFAULT_MAX_WORDS } from './importer.js?v=118'
+} from './ui.js?v=119'
+import * as AUTH from './cloud.js?v=119'
+import * as ENRICH from './enrich.js?v=119'
+import * as EXP from './exporter.js?v=119'
+import { createReviewRunner, parseReviewReport, auditEntry, REVIEW_TIMEOUT_MS } from './content-review.js?v=119'
+export { REVIEW_TIMEOUT_MS } from './content-review.js?v=119'
+import { parseImport, skippedLines, DEFAULT_MAX_WORDS } from './importer.js?v=119'
 
 import {
-  judgeTyped, reviewSemantics, looksLikeEnglishPhrase, cachedVerdict,
+  judgeTyped, reviewSemantics, looksLikeEnglishPhrase, cachedVerdict, inflectionFeedback,
   HIT, ALT, WRONG, UNSURE,
-} from './judge.js?v=118'
+} from './judge.js?v=119'
 
 /* ═════════════════════════ 通用片段 ═════════════════════════ */
 
@@ -1063,7 +1063,7 @@ export function sessionProgress() {
 export {
   normalizeAns, judgeTyped, looksLikeEnglishPhrase, reviewSemantics, cachedVerdict,
   clearJudgeCache, HIT, ALT, WRONG, UNSURE,
-} from './judge.js?v=118'
+} from './judge.js?v=119'
 
 const REG_ZH = { formal: '正式', neutral: '中性', spoken: '口语', informal: '非正式' }
 
@@ -1113,7 +1113,14 @@ export function verdictHTML(a, opts) {
       (a.typo ? '基本正确，但有拼写错误：' : '答对了：') + '<b>' + exp + '</b>' +
       (a.typo ? '　你写的：' + esc(a.given) : '') + '</div>'
   }
-  return '<div class="verdict bad">不对，正确答案是 <b>' + exp + '</b>　你写的：' + esc(a.given) + '</div>'
+  const form = inflectionFeedback(a)
+  if (form) {
+    return '<div class="verdict bad">请检查词形：<b>' + esc(form.given) + '</b> → 例句使用 <b>' + esc(form.expected) + '</b>。' +
+      '检查主谓一致、时态或语态；这不等于整条搭配都没记住。' +
+      '<div>你的句子：' + esc(form.givenSentence) + '</div>' +
+      '<div>参考填法：' + esc(form.referenceSentence) + '</div></div>'
+  }
+  return '<div class="verdict bad">' + (a.sentence ? '这次填写未通过检查，参考填法是 ' : '不对，正确答案是 ') + '<b>' + exp + '</b>　你写的：' + esc(a.given) + '</div>'
 }
 
 /**
@@ -1307,7 +1314,7 @@ export function renderStudy() {
     const cz = clozeOf(word)
     session.cloze = cz || null
     if (cz) {
-      front = '<div class="ask">把空缺处的英文打出来</div>' +
+      front = '<div class="ask">按句意填写空缺，注意主谓一致、时态和语态</div>' +
         '<div style="font-size:19px;line-height:1.7;margin-top:10px;">' + esc(cz.sentence) + '</div>' +
         (cz.zh ? '<div class="ipa" style="margin-top:8px;">' + esc(cz.zh) + '</div>' : '')
       // 送判分/复核的必须是**挖空后**的句子（cz.sentence），不是原文：
@@ -1606,7 +1613,7 @@ export function bindStudy(go, onChanged) {
     const r = judgeTyped(given, it.expected, { accept: it.accept })
     session.answered = {
       ok: r.ok, verdict: r.verdict, typo: r.typo, loose: r.loose,
-      empty: r.empty, given: given, expected: it.expected, kind: it.kind,
+      empty: r.empty, given: given, expected: it.expected, kind: it.kind, sentence: it.sentence || '',
     }
     session.shown = true
     session.cardShownAt = Date.now()
