@@ -33,3 +33,31 @@ test('semantic timeout aborts the request and returns unresolved',()=>fixture(as
 }));
 
 test('explicit dictation spelling task does not treat a different word as an unresolved synonym',()=>fixture(J=>{assert.equal(J.judgeTyped('assist','help',{spelling:true}).verdict,'wrong');assert.equal(J.judgeTyped('assist','help').verdict,'unsure')}));
+
+
+test('screenshot inflections use filled-sentence review for single words and phrases, never local acceptance',()=>fixture(async J=>{
+ const rows=[
+  {expected:'deducted money from',given:'deduct money from',sentence:'The bank ________ my account without notice.'},
+  {expected:'interceded',given:'intercede',sentence:'She ________ with the dean on behalf of the failing student.'},
+ ];
+ for(const row of rows){
+  assert.equal(J.judgeTyped(row.given,row.expected).verdict,'unsure');
+  assert.equal(J.__prompts().formMode(row),true);
+  const info=J.inflectionFeedback({...row,verdict:'wrong'});
+  assert.ok(info);assert.ok(info.givenSentence.includes(row.given));assert.ok(info.referenceSentence.includes(row.expected));
+  for(const verdict of ['alt','unsure','hit'])assert.equal(J.inflectionFeedback({...row,verdict}),null);
+  let request;await J.reviewSemantics({...row,chat:async o=>{request=o;return '{"verdict":"wrong"}'}});
+  assert.equal(request.system,J.__prompts().form);assert.ok(request.user.includes(info.givenSentence));
+ }
+ for(const given of ['deducts money from','deduct money in','did not deduct money from']){
+  assert.equal(J.judgeTyped(given,'deducted money from').verdict,'unsure');
+ }
+ assert.equal(J.inflectionDifference('deducted money from','deduct money in'),null);
+ assert.equal(J.inflectionDifference('safe','safety'),null);
+ assert.equal(J.inflectionFeedback({given:'intercede',expected:'interceded',verdict:'wrong'}),null);
+}));
+
+test('v4 semantic verdicts are invalidated after contextual form prompt changes',()=>fixture(J=>{
+ global.localStorage.setItem('lexiloop.judgecache.v4',JSON.stringify({'old':{v:'wrong',t:Date.now()}}));
+ assert.equal(J.cachedVerdict('interceded','intercedes',{sentence:'She ________ with the dean.'}),null);
+}));

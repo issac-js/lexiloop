@@ -74,5 +74,11 @@
  {"id":"bad-03","category":"non-english","expected":"help","given":"123","local":"wrong"},
  {"id":"bad-04","category":"non-english","expected":"help","given":"帮助","local":"wrong"},
  {"id":"bad-05","category":"non-english","expected":"help","given":"!?%","local":"wrong"},
- {"id":"bad-06","category":"empty-target","expected":"","given":"help","local":"unsure"}
+ {"id":"bad-06","category":"empty-target","expected":"","given":"help","local":"unsure"},
+ {"id":"screenshot-form-01","category":"contextual-inflection","expected":"deducted money from","given":"deduct money from","sentence":"The bank ________ my account without notice.","local":"unsure","semantic":"wrong"},
+ {"id":"screenshot-form-02","category":"contextual-inflection","expected":"deducted money from","given":"deducts money from","sentence":"The bank ________ my account without notice.","local":"unsure","semantic":"alt"},
+ {"id":"screenshot-form-03","category":"contextual-inflection","expected":"interceded","given":"intercede","sentence":"She ________ with the dean on behalf of the failing student.","local":"unsure","semantic":"wrong"},
+ {"id":"screenshot-form-04","category":"contextual-inflection","expected":"interceded","given":"intercedes","sentence":"She ________ with the dean on behalf of the failing student.","local":"unsure","semantic":"alt"},
+ {"id":"screenshot-form-05","category":"contextual-inflection","expected":"interceded","given":"intercedes","sentence":"She ________ with the dean yesterday.","local":"unsure","semantic":"wrong"},
+ {"id":"screenshot-form-06","category":"contextual-inflection","expected":"deducted money from","given":"deduct money from","sentence":"The bank will ________ my account tomorrow.","local":"unsure","semantic":"alt"}
 ]
