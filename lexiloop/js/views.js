@@ -2,23 +2,25 @@
  * views.js — 全部页面
  * 每个页面导出 render()（返回 HTML）与 bind()（挂载事件），由 app.js 调度。
  */
-import * as S from './store.js?v=117'
-import * as FSRS from './fsrs.js?v=117'
-import { CARD_TYPES, ENRICH_CONCURRENCY, RECOMMENDED_SETTINGS } from './config.js?v=117'
+import * as S from './store.js?v=118'
+import * as FSRS from './fsrs.js?v=118'
+import { CARD_TYPES, ENRICH_CONCURRENCY, RECOMMENDED_SETTINGS } from './config.js?v=118'
 import {
   esc, $, $$, toast, fail, ok, openModal, closeModal, confirmDialog,
   icon, LOGO_SVG, speak, fmtDateCN, relTime, STRENGTH_ZH, REGISTER_ZH,
   listEnVoices, getVoicePref, setVoicePref, getTheme, applyTheme,
-} from './ui.js?v=117'
-import * as AUTH from './cloud.js?v=117'
-import * as ENRICH from './enrich.js?v=117'
-import * as EXP from './exporter.js?v=117'
-import { parseImport, skippedLines, DEFAULT_MAX_WORDS } from './importer.js?v=117'
+} from './ui.js?v=118'
+import * as AUTH from './cloud.js?v=118'
+import * as ENRICH from './enrich.js?v=118'
+import * as EXP from './exporter.js?v=118'
+import { createReviewRunner, parseReviewReport, auditEntry, REVIEW_TIMEOUT_MS } from './content-review.js?v=118'
+export { REVIEW_TIMEOUT_MS } from './content-review.js?v=118'
+import { parseImport, skippedLines, DEFAULT_MAX_WORDS } from './importer.js?v=118'
 
 import {
   judgeTyped, reviewSemantics, looksLikeEnglishPhrase, cachedVerdict,
   HIT, ALT, WRONG, UNSURE,
-} from './judge.js?v=117'
+} from './judge.js?v=118'
 
 /* ═════════════════════════ 通用片段 ═════════════════════════ */
 
@@ -431,165 +433,60 @@ export function queueGeneration(terms) {
    这类问题"以词条开头"等规则判据的召回率是 0，只有模型能看出来；
    而这类错误会把词性认知教错，属于必须挡住的 blocking 级。 */
 
-let reviewJob = null
 const REVIEW_KEY = 'lexiloop.reviewJob'
-export const REVIEW_TIMEOUT_MS = 120000
+const reviewOwner = () => String(S.state.user && S.state.user.id || S.state.accountEmail || 'offline')
+const reviewKey = owner => REVIEW_KEY + '.' + encodeURIComponent(owner)
+let reviewChanged = null
+const reviewer = createReviewRunner({
+  owner: reviewOwner,
+  word: id => S.state.words.find(w => w.id === id),
+  owns: id => S.state.cards.some(c => c.word_id === id),
+  load() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(reviewKey(reviewOwner())) || 'null')
+      if (saved) return saved
+      const legacy = JSON.parse(localStorage.getItem(REVIEW_KEY) || 'null')
+      const own = new Set(S.state.cards.map(c => c.word_id))
+      if (legacy && !legacy.owner && Array.isArray(legacy.ids) && legacy.ids.every(id => own.has(id))) {
+        const migrated = { ...legacy, owner: reviewOwner(), model: 'auto' }
+        localStorage.setItem(reviewKey(reviewOwner()), JSON.stringify(migrated))
+        localStorage.removeItem(REVIEW_KEY)
+        return migrated
+      }
+    } catch (_) { /* corrupt checkpoints never establish successful reviews */ }
+    return null
+  },
+  save(job) {
+    if (!job) return
+    try { localStorage.setItem(reviewKey(job.owner), JSON.stringify({ ...job, running: false, active: [], current: '' })) }
+    catch (_) { return false }
+  },
+  changed() { if (reviewChanged) reviewChanged('review') },
+  review(word, opts) {
+    const p = word.payload || {}
+    return ENRICH.reviewTerm({ term: word.lemma || word.normalized, senses: p.senses || [],
+      collocations: p.collocations || [], source_examples: p.source_examples || [] }, opts)
+  },
+  persist: (word, report) => S.putReviewReport(word, report),
+})
 
-function saveReviewProgress() {
-  try {
-    if (!reviewJob) return
-    localStorage.setItem(REVIEW_KEY, JSON.stringify({
-      scope: reviewJob.scope, ids: reviewJob.ids, cursor: reviewJob.cursor,
-      blocking: reviewJob.blocking, advisory: reviewJob.advisory,
-      failed: reviewJob.failed, lastError: reviewJob.lastError,
-      reviewed: reviewJob.reviewed, skipped: reviewJob.skipped, previousDone: reviewJob.previousDone,
-    }))
-  } catch (e) { /* 本机存储不可用时仍可在本会话继续 */ }
-}
-
-function clearReviewProgress() {
-  try { localStorage.removeItem(REVIEW_KEY) } catch (e) {}
-}
-
-function restoreReviewProgress(scope) {
-  try {
-    const saved = JSON.parse(localStorage.getItem(REVIEW_KEY) || 'null')
-    if (saved && (!scope || saved.scope === scope) && ['all', 'learned'].includes(saved.scope) &&
-        Array.isArray(saved.ids) && Number.isInteger(saved.cursor) && saved.cursor >= 0 &&
-        saved.cursor < saved.ids.length) return saved
-  } catch (e) {}
-  return null
-}
-
-function restoredReview(saved) {
-  return { scope: saved.scope, ids: saved.ids, cursor: saved.cursor, done: saved.cursor,
-    total: saved.ids.length, blocking: saved.blocking || 0, advisory: saved.advisory || 0,
-    failed: saved.failed || 0, lastError: saved.lastError || '',
-    reviewed: saved.reviewed || 0, skipped: saved.skipped || 0,
-    previousDone: saved.previousDone == null ? saved.cursor : saved.previousDone,
-    running: false, pauseRequested: false, current: '' }
-}
-
-export function reviewStatus() {
-  if (!reviewJob) {
-    const saved = restoreReviewProgress()
-    if (saved) reviewJob = restoredReview(saved)
-  }
-  if (!reviewJob) return null
-  return { ...reviewJob, ids: undefined }
-}
-
-export function pauseReview(onChanged) {
-  if (reviewJob && reviewJob.running) {
-    // 当前请求完成后再停；保持运行锁，避免暂停后立即继续造成两个循环并发。
-    reviewJob.pauseRequested = true
-    saveReviewProgress()
-    if (onChanged) onChanged('review')
-  }
-}
-
-/** 保留原 localStorage 检查点格式；只在词条处理成功后推进游标。 */
+export function reviewStatus() { return reviewer.status() }
+export function pauseReview(onChanged) { reviewChanged = onChanged || reviewChanged; reviewer.pause() }
 export async function startReview(scope, onChanged) {
-  if (reviewJob && reviewJob.running) return
-  if (!reviewJob || reviewJob.scope !== scope) {
-    const saved = restoreReviewProgress(scope)
-    if (saved) reviewJob = restoredReview(saved)
-    else {
-      const cards = S.state.cards.filter((c) => scope === 'all' || Number(c.reps) > 0)
-      const ids = Array.from(new Set(cards.map((c) => c.word_id))).filter(Boolean)
-      reviewJob = { scope, ids, cursor: 0, done: 0, total: ids.length, blocking: 0,
-        advisory: 0, failed: 0, reviewed: 0, skipped: 0, previousDone: 0, lastError: '', running: false, pauseRequested: false, current: '' }
-    }
+  if (!['all', 'learned'].includes(scope)) throw Error('未知复核范围')
+  if (S.dataPending() || S.dataFailed()) throw Error('请先完成词库同步，再复核。')
+  reviewChanged = onChanged || reviewChanged
+  if (reviewer.status() && reviewer.status().running) return
+  const ids = S.state.cards.filter(c => scope === 'all' || Number(c.reps) > 0).map(c => c.word_id).filter(Boolean)
+  const start = () => reviewer.start(scope, ids, S.state.settings.llm_model || 'auto')
+  // Web Locks prevent two tabs of this origin/account from running the same queue.
+  if (typeof window !== 'undefined' && window.navigator && window.navigator.locks) {
+    return window.navigator.locks.request('lexiloop-review:' + reviewOwner(), { ifAvailable: true }, lock => {
+      if (!lock) throw Error('这个账号已在另一标签页复核，请在那里查看或暂停。')
+      return start()
+    })
   }
-  reviewJob.running = true
-  reviewJob.pauseRequested = false
-  reviewJob.lastError = ''
-  saveReviewProgress()
-  if (onChanged) onChanged('review')
-  await runReview(onChanged)
-}
-
-async function reviewWithTimeout(entry) {
-  const controller = new AbortController()
-  let timer
-  try {
-    return await Promise.race([
-      ENRICH.reviewTerm(entry, { model: S.state.settings.llm_model || undefined, signal: controller.signal }),
-      new Promise((resolve, reject) => {
-        timer = setTimeout(() => {
-          reject(new Error('REVIEW_TIMEOUT'))
-          controller.abort()
-        }, REVIEW_TIMEOUT_MS)
-      }),
-    ])
-  } finally { clearTimeout(timer) }
-}
-
-async function runReview(onChanged) {
-  const j = reviewJob
-  if (!j) return
-  try {
-    while (j.running && !j.pauseRequested && j.cursor < j.ids.length) {
-      const w = S.state.words.find((x) => x.id === j.ids[j.cursor])
-      j.current = w ? (w.lemma || w.normalized) : ''
-      if (onChanged) onChanged('review')
-      if (!w) {
-        j.lastError = '当前词条尚未加载，请同步词库后继续。'
-        throw new Error('REVIEW_WORD_MISSING')
-      }
-      if (w && w.payload && (w.payload.collocations || []).length && w.verification_status !== 'corrected') {
-        let r
-        try {
-          r = await reviewWithTimeout({ term: w.lemma || w.normalized,
-            senses: w.payload.senses || [], collocations: w.payload.collocations || [] })
-        } catch (e) {
-          j.lastError = e && e.message === 'REVIEW_TIMEOUT'
-            ? '模型等待超过 2 分钟，已停止等待；请稍后继续。'
-            : '模型请求失败，请检查网络、模型配置或额度后继续。'
-          throw e
-        }
-        if (!r || !r.ok) {
-          j.lastError = '模型返回的复核结果无法解析，请稍后继续。'
-          throw new Error('REVIEW_INVALID_RESULT')
-        }
-        // 人工修正可能在等待期间发生，写回前再检查一次。
-        if (w.verification_status !== 'corrected') {
-          try {
-            if (r.severity === 'blocking') {
-              await S.putWordVerification(w.normalized, 'flagged',
-                r.issues.join('；').slice(0, 500) || r.reason || '复核判定为 blocking')
-              j.blocking++
-            } else if (r.severity === 'advisory' || r.missing.length) {
-              const note = r.issues.concat(r.missing.map((m) => '缺义项：' + m)).join('；').slice(0, 500)
-              await S.putWordVerification(w.normalized, 'reviewed', note)
-              j.advisory++
-            }
-          } catch (e) {
-            j.lastError = '复核标记保存失败，当前词条未计为完成；请稍后继续。'
-            throw e
-          }
-        }
-        j.reviewed++
-      } else {
-        j.skipped++
-      }
-      j.cursor++
-      j.done = j.cursor
-      saveReviewProgress()
-      if (onChanged) onChanged('review')
-    }
-  } catch (e) {
-    j.failed++
-    if (!j.lastError) j.lastError = '复核中断，当前词条保留在断点，可稍后继续。'
-  } finally {
-    j.running = false
-    j.pauseRequested = false
-    if (!j.lastError) j.current = ''
-    if (j.cursor >= j.ids.length) clearReviewProgress()
-    else saveReviewProgress()
-    try { S.saveLocal() } catch (e) {}
-    if (onChanged) onChanged('review')
-  }
+  return start()
 }
 
 export function pauseJob(onChanged) {
@@ -1166,7 +1063,7 @@ export function sessionProgress() {
 export {
   normalizeAns, judgeTyped, looksLikeEnglishPhrase, reviewSemantics, cachedVerdict,
   clearJudgeCache, HIT, ALT, WRONG, UNSURE,
-} from './judge.js?v=117'
+} from './judge.js?v=118'
 
 const REG_ZH = { formal: '正式', neutral: '中性', spoken: '口语', informal: '非正式' }
 
@@ -1727,11 +1624,11 @@ export function bindStudy(go, onChanged) {
   const reviewIfNeeded = async () => {
     const a = session.answered
     const it = session.interactive
-    if (!a || !it || a.verdict !== WRONG) return
+    if (!a || !it || ![WRONG, UNSURE].includes(a.verdict)) return
     if (it.kind !== 'type' || !looksLikeEnglishPhrase(a.given)) return
 
     // 上次已经判过同样的组合：直接用缓存，不再等
-    const hit = cachedVerdict(it.expected, a.given)
+    const hit = cachedVerdict(it.expected, a.given, { sentence: it.sentence || '', zh: it.zh || '', model: S.state.settings.llm_model || undefined })
     if (!hit) {
       a.reviewing = true
       onChanged()
@@ -1743,6 +1640,7 @@ export function bindStudy(go, onChanged) {
         chat: AUTH.chatText,
         model: S.state.settings.llm_model || undefined,
       })
+      if (session.answered !== a) return
       a.reviewing = false
       applyVerbal(a, res.verdict)
       onChanged()
@@ -2799,6 +2697,56 @@ function openEnrich(onChanged) {
   })
 }
 
+export function reviewReportHTML(word) {
+  const report = parseReviewReport(word.verify_note)
+  if (!report) return word.verify_note ? '<p class="tiny">复核意见：' + esc(word.verify_note) + '</p>' : ''
+  return '<section class="card tight content-review-report" id="word-review-report"><h3>内容复核报告</h3>' +
+    '<p class="tiny">' + esc(report.source === 'rules' ? '结构规则检查' : '模型复核') + ' · ' + esc(fmtDateCN(report.at)) +
+    ' · ' + esc(report.severity === 'blocking' ? '需要修正' : report.severity === 'advisory' ? '有改进建议' : '未发现问题') + '</p>' +
+    '<p>' + esc(report.reason || '') + '</p>' +
+    (report.issues.length ? '<ul>' + report.issues.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul>' : '') +
+    (report.suggestions.length ? '<h4>建议（确认前不改原文）</h4><ul>' + report.suggestions.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul>' : '') +
+    '<p class="tiny">' + esc(report.reference || '模型复核不能代替权威词典核验。') + '</p></section>'
+}
+
+function openWordCorrection(word, onChanged, draft, draftSource) {
+  const baseline = JSON.parse(JSON.stringify(word))
+  const payload = JSON.parse(JSON.stringify(draft || word.payload || {}))
+  if (!Array.isArray(payload.senses) || !payload.senses.length) payload.senses = [{ pos: '', def_zh: '', def_en: '' }]
+  const fields = []
+  const add = (path, label) => fields.push({ path, label, before: path.reduce((o, key) => o && o[key], baseline.payload || {}) || '', value: path.reduce((o, key) => o && o[key], payload) || '' })
+  payload.senses.forEach((s, i) => { add(['senses', i, 'pos'], '释义 ' + (i + 1) + ' · 词性'); add(['senses', i, 'def_zh'], '释义 ' + (i + 1) + ' · 中文'); add(['senses', i, 'def_en'], '释义 ' + (i + 1) + ' · 英文') })
+  ;(payload.collocations || []).forEach((c, i) => {
+    add(['collocations', i, 'pattern'], '搭配 ' + (i + 1)); add(['collocations', i, 'zh'], '搭配 ' + (i + 1) + ' · 中文'); add(['collocations', i, 'type'], '搭配 ' + (i + 1) + ' · 类型')
+    ;(c.examples || []).forEach((e, j) => { add(['collocations', i, 'examples', j, 'en'], '搭配 ' + (i + 1) + ' · 例句 ' + (j + 1)); add(['collocations', i, 'examples', j, 'zh'], '搭配 ' + (i + 1) + ' · 译文 ' + (j + 1)) })
+  })
+  ;(payload.source_examples || []).forEach((e, i) => { add(['source_examples', i, 'en'], '原始例句 ' + (i + 1)); add(['source_examples', i, 'zh'], '原始译文 ' + (i + 1)) })
+  openModal('<h3>核对并修正：' + esc(word.lemma || word.normalized) + '</h3>' +
+    '<p class="tiny">先对照词典或原始语料核实。修改的是共享词条内容；保存前展示差异，卡片学习进度保留。</p>' + reviewReportHTML(word) +
+    fields.map((f, i) => '<div class="field"><label for="word-fix-' + i + '">' + esc(f.label) + '</label><textarea class="input" id="word-fix-' + i + '">' + esc(f.value) + '</textarea></div>').join('') +
+    '<div class="field"><label for="word-fix-source">核实来源（词典链接或原始语料说明）</label><input class="input" id="word-fix-source" value="' + esc(draftSource || payload.correction_source || '') + '"></div>' +
+    '<div class="modal-actions"><button class="btn primary" id="word-fix-preview">查看差异并保存</button></div>')
+  $('#word-fix-preview').onclick = async () => {
+    const source = String($('#word-fix-source').value || '').trim()
+    if (!source) return fail('请填写核实来源')
+    const changes = []
+    fields.forEach((f, i) => {
+      const value = String($('#word-fix-' + i).value || '').trim()
+      if (value !== String(f.before)) changes.push({ ...f, after: value })
+      const target = f.path.slice(0, -1).reduce((o, key) => o[key], payload)
+      target[f.path.at(-1)] = value
+    })
+    if (!changes.length) return fail('还没有修改内容')
+    if (auditEntry({ ...word, payload }).some(x => x.severity === 'blocking')) return fail('修正后仍没有可学习的释义或例句')
+    if (!(await confirmDialog({ title: '确认保存这些修正？', sub: '会保留原内容版本和学习进度。',
+      body: changes.map(c => '<p><b>' + esc(c.label) + '</b><br>原文：' + esc(c.before || '（空）') + '<br>修改：' + esc(c.after || '（空）') + '</p>').join(''), okText: '确认保存修正' }))) { openWordCorrection(word, onChanged, payload, source); return }
+    try {
+      await S.correctWord(baseline, payload, source)
+      closeModal(); onChanged(true); ok('修正已保存，学习进度保留')
+    } catch (e) { openWordCorrection(word, onChanged, payload, source); fail(e.message || '保存失败，请同步后重试') }
+  }
+}
+
 /** 词条详情：以「词」为单位，一个词的多张卡在这里一并展示 */
 function openWordDetail(group, onChanged) {
   const word = group.word
@@ -2825,12 +2773,14 @@ function openWordDetail(group, onChanged) {
     (ipa ? ' <span class="tiny">/' + esc(String(ipa).replace(/\//g, '')) + '/</span>' : '') + '</h3>' +
     '<p class="sub">' + esc(cards[0].deck) + '　｜　' + cards.length + ' 张卡' +
     '　｜　' + esc(verifyLabel(word)) + '</p>' +
-    wordAnswerHTML(word) +
+    wordAnswerHTML(word) + reviewReportHTML(word) +
+    ((p.correction_history || []).length ? '<details><summary>查看修正前的内容版本</summary>' + p.correction_history.map(h => '<h4>' + esc(fmtDateCN(h.at)) + '</h4>' + wordAnswerHTML({ payload: h.payload || {} })).join('') + '</details>' : '') +
     '<h3 class="sec">各张卡片</h3>' +
     typeRows +
-    '<div class="modal-actions">' +
+    '<div class="modal-actions word-detail-actions">' +
     '<button class="btn" id="wd-speak">朗读</button>' +
     '<button class="btn" id="wd-regen">重新生成</button>' +
+    '<button class="btn" id="wd-edit">核对并修正内容</button>' +
     '<button class="btn ' + (allSuspended ? 'soft' : '') + '" id="wd-susp">' + (allSuspended ? '恢复' : '暂停') + '</button>' +
     '<button class="btn primary" id="wd-reset">重学</button>' +
     '</div>' +
@@ -2839,9 +2789,11 @@ function openWordDetail(group, onChanged) {
     '</div>'
   )
 
+  $('#wd-edit').onclick = () => openWordCorrection(word, onChanged)
   $('#wd-speak').onclick = () => { if (!speak(word.lemma)) fail('当前环境不支持朗读') }
 
   $('#wd-regen').onclick = async () => {
+    if (word.verification_status === 'corrected' && !(await confirmDialog({ title: '重新生成会覆盖人工修正的内容', sub: '请先保留已核实的内容，确认仍要重新生成。', okText: '重新生成' }))) return
     closeModal()
     toast('正在重新生成…')
     try {
@@ -3342,7 +3294,7 @@ function verifyLabel(w) {
   if (st === 'flagged') return 'AI 生成 · 待审核（内容可能有问题）'
   if (st === 'suspect') return 'AI 生成 · 待审核（生成校验未通过）'
   if (st === 'reviewed') return 'AI 生成 · 已复核（有改进建议）'
-  if (st === 'verified') return 'AI 生成 · 已核验'
+  if (st === 'verified') return '模型复核未发现问题（非权威核验）'
   return confidenceLabel(((w && w.payload) || {}).confidence)
 }
 
@@ -3364,11 +3316,15 @@ function reviewProgressHTML() {
   return '<div class="tiny" role="status" aria-live="polite" style="margin:0 0 10px;line-height:1.7;">' +
     label + st.done + ' / ' + st.total + ' 个词条（' + pct + '%，已处理）' +
     (st.current ? '　·　' + esc(st.current) : '') + '<br>' +
-    '实际复核 ' + st.reviewed + ' 条，跳过 ' + st.skipped + ' 条（已人工修正或无搭配内容）' +
+    '模型复核 ' + st.reviewed + ' 条，规则检查完成 ' + st.rules + ' 条<br>' +
+    '有效缓存跳过 ' + st.cached + ' 条，保护人工修正 ' + st.protected + ' 条，已移除 ' + st.removed + ' 条' +
     (st.previousDone ? '<br>继承旧版已处理进度 ' + st.previousDone + ' 条；历史成功/跳过明细未记录。' : '') + '<br>' +
-    '已标记：会教错 ' + st.blocking + ' 条　｜　有改进建议 ' + st.advisory + ' 条' +
+    '本轮报告：会教错 ' + st.blocking + ' 条　｜　有改进建议 ' + st.advisory + ' 条' +
     (st.failed ? '　｜　失败尝试 ' + st.failed + ' 次（不计完成）' : '') +
-    (st.pauseRequested ? '<br>等待当前词条处理结束后暂停，请勿刷新页面。' : '') +
+    '<br>并发 ' + st.concurrency + '，正在处理 ' + st.active.length + ' 条' +
+    (st.requestCount && st.requestsMs > 0 ? '；单条平均 ' + Math.round(st.requestsMs / st.requestCount / 1000) + ' 秒，剩余参考约 ' + Math.ceil((st.total - st.done) * st.requestsMs / st.requestCount / st.concurrency / 60000) + ' 分钟（随缓存和限流变化）' : '；正在测量速度，暂不估算剩余时间') +
+    (st.pauseRequested ? '<br>等待正在处理的词条结束后暂停，请勿刷新页面。' : '') +
+    (st.persistenceError ? '<br>本机无法保存断点，关闭页面后可能需要重新处理；已保存的云端报告仍保留。' : '') +
     (st.lastError ? '<br><span style="color:var(--bad);">' + esc(st.lastError) + '</span>' : '') + '</div>'
 }
 
@@ -3394,7 +3350,7 @@ function bindReviewControls(onChanged) {
   for (const scope of ['learned', 'all']) {
     const btn = $('#me-review-' + scope)
     if (btn) btn.onclick = () => {
-      startReview(scope, onChanged).catch(() => fail('复核中断，请稍后继续'))
+      startReview(scope, onChanged).catch(e => fail(e.message || '复核中断，请稍后继续'))
     }
   }
   const pause = $('#me-review-pause')
@@ -3598,7 +3554,7 @@ export function renderMe() {
     '不因为一条搭配欠佳就挡住整条词条。</p>' +
     '<div id="review-panel">' + reviewPanelHTML() + '</div>' +
     '<p class="tiny" style="margin:10px 0 0;">范围按本账号卡片关联的词条去重，一个词条可有多张卡；不扩展到共享词库的其他词条。耗时取决于模型和词条数量，进度会实时更新。' +
-    '暂停会等待当前词条结束；刷新或关闭页面会中断任务，下次点击继续。复核只写核验标记，不改内容。</p>' +
+    '本轮按启动时的唯一词条快照处理，新增词条下轮纳入。最多两条并发，限流后降为单并发；相同内容的有效复核报告保留 30 天，可跳过重复调用。暂停会等待正在处理的词条结束。关闭页面会停止，下次继续；未接入云端常驻任务。复核保存报告与建议，修改内容需要你确认。</p>' +
     '</div>' +
 
     '<div class="card">' +

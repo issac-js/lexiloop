@@ -686,3 +686,8 @@ textarea.input { resize: vertical; min-height: 120px; line-height: 1.6; }
   .btn:active { background: var(--brand-soft); }
   .btn.primary:active { filter: brightness(0.94); }
 }
+
+/* Content reports and correction controls must fit narrow phone dialogs. */
+.content-review-report, .modal { overflow-wrap: anywhere; }
+.word-detail-actions { flex-wrap: wrap; }
+.word-detail-actions .btn { flex: 1 1 120px; }

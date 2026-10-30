@@ -15,7 +15,7 @@ PUBLIC_FILES = (
     'vendor/workbuddy-cloud-sdk.js',
     'js/app.js', 'js/cloud.js', 'js/config.js', 'js/enrich.js', 'js/exporter.js',
     'js/fsrs.js', 'js/game.js', 'js/focus.js', 'js/focus-core.js', 'js/goal-metrics.js', 'js/importer.js', 'js/judge.js', 'js/labs.js',
-    'js/store.js', 'js/ui.js', 'js/views.js',
+    'js/store.js', 'js/ui.js', 'js/views.js', 'js/content-review.js',
 )
 
 

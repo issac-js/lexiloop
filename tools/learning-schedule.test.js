@@ -334,3 +334,13 @@ test('goals and rendered pages explain paused new words and an exhausted cap wit
   V.resetSession();
   assert.match(V.renderStudy(), /已达到今日作答上限/);
 }));
+
+
+test('unresolved practice answers do not become Again or consume the daily budget', () => withApp(async ({ S, seed, card, requests }) => {
+  seed([card(1)]);
+  const before = JSON.stringify(S.state.cards);
+  assert.equal(await S.creditGrades([{ id: 1, ok: false, verdict: 'unsure', ms: 2000 }]), 0);
+  assert.equal(JSON.stringify(S.state.cards), before);
+  assert.equal(requests.filter(r => r.name === 'record_review').length, 0);
+  assert.equal(S.dailyReviewed(), 0);
+}));

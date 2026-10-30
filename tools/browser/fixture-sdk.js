@@ -18,7 +18,7 @@
     const count = name === 'large' ? 1205 : name === 'learning' ? 1 : name === 'goal-recorded' ? 106 : 12;
     for (let i = 1; i <= count; i++) {
       const term = i === 1 ? 'make arrangements for a follow-up appointment' : 'follow up ' + i;
-      words.push({ id: i, normalized: term, lemma: term, verification_status: 'verified', payload: {
+      words.push({ id: i, normalized: term, lemma: term, updated_at: '2026-10-01T00:00:00.000Z', verification_status: 'verified', payload: {
         senses: [{ pos: 'phrase', def_zh: '安排后续预约' + i, def_en: 'arrange a follow-up appointment' }],
         collocations: [{ pattern: term, zh: '安排后续预约', examples: [{ en: 'Please ' + term + ' tomorrow.', zh: '请安排后续预约。' }] }],
       } });
@@ -43,7 +43,7 @@
   if (!data) data = fresh(scenario);
   function save() { localStorage.setItem(key(), JSON.stringify(data)); }
   function query(table) {
-    let filters = [], from = 0, end = Infinity, maximum = Infinity, count = false, head = false, write;
+    let filters = [], from = 0, end = Infinity, maximum = Infinity, count = false, head = false, write, writeMode, updatedRows;
     const q = {
       select(_columns, opts = {}) { count = opts.count === 'exact'; head = !!opts.head; return q; },
       order() { return q; }, limit(n) { maximum = n; return q; },
@@ -51,12 +51,16 @@
       in(field, values) { filters.push((row) => values.includes(row[field])); return q; },
       eq(field, value) { filters.push((row) => row[field] === value); return q; },
       gte(field, value) { filters.push((row) => row[field] >= value); return q; },
-      upsert(row) { write = row; return q; },
+      upsert(row) { write = row; writeMode = 'upsert'; return q; },
+      update(row) { write = row; writeMode = 'update'; return q; },
       maybeSingle: async () => ({ data: table === 'settings' ? clone(data.settings) : null, error: null }),
       then(resolve, reject) {
         try {
           if (write) {
-            if (table === 'settings') data.settings = clone(write);
+            if (table === 'words' && writeMode === 'update') {
+              updatedRows = data.words.filter(row => filters.every(filter => filter(row)));
+              updatedRows.forEach(row => Object.assign(row, clone(write)));
+            } else if (table === 'settings') data.settings = clone(write);
             else if (table === 'goal_days') {
               for (const row of Array.isArray(write) ? write : [write]) if (!data.goals.some((g) => g.day === row.day)) data.goals.push(clone(row));
             }
@@ -64,7 +68,8 @@
             save();
           }
           let rows = table === 'goal_days' ? data.goals : table === 'settings' ? [data.settings] : data[table] || [];
-          for (const filter of filters) rows = rows.filter(filter);
+          if (updatedRows) rows = updatedRows;
+          else for (const filter of filters) rows = rows.filter(filter);
           const total = rows.length; rows = rows.slice(from, Math.min(end + 1, from + maximum));
           return Promise.resolve({ data: head ? null : clone(rows), count: count ? total : null, error: null }).then(resolve, reject);
         } catch (error) { return Promise.reject(error).then(resolve, reject); }
@@ -101,7 +106,7 @@
       if (reviewMock.mode === 'hold') await new Promise((resolve) => reviewMock.releases.push(resolve));
       if (reviewMock.mode === 'error') throw Error('Synthetic model failure');
       const content = reviewMock.mode === 'invalid' ? 'not json' :
-        JSON.stringify({ pos_ok: true, severity: 'none', collocations: [], missing_senses: [] });
+        JSON.stringify({ pos_ok: true, severity: 'none', collocations: [{ index: 1, idiomatic: true, issue: '' }], missing_senses: [], suggestions: [] });
       yield { choices: [{ delta: { content } }] };
     },
   } } };
