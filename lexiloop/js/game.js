@@ -4,17 +4,17 @@
  * 因此游戏本身不计分；结束时给一个**可选**的"把这次表现记进复习计划"，
  * 由用户自己决定是否写入调度（避免游戏手感污染记忆曲线）。
  */
-import * as S from './store.js?v=117'
-import * as CLOUD from './cloud.js?v=117'
-import { $, $$, esc, icon, toast, fail, ok, speak, openModal, closeModal, confirmDialog } from './ui.js?v=117'
+import * as S from './store.js?v=118'
+import * as CLOUD from './cloud.js?v=118'
+import { $, $$, esc, icon, toast, fail, ok, speak, openModal, closeModal, confirmDialog } from './ui.js?v=118'
 import {
   normalizeAns, judgeTyped, buildChoices, whyNote, verdictHTML,
   reviewSemantics, looksLikeEnglishPhrase, cachedVerdict,
   dataStateCard,
   HIT, ALT, WRONG, UNSURE,
-} from './views.js?v=117'
-import * as LABS from './labs.js?v=117'
-import * as FOCUS from './focus.js?v=117'
+} from './views.js?v=118'
+import * as LABS from './labs.js?v=118'
+import * as FOCUS from './focus.js?v=118'
 
 const G = { mode: null, match: null, dict: null, quiz: null, chat: null, timer: null, story: null, size: 0 }
 
@@ -777,7 +777,7 @@ function renderDict() {
     const creditLine = S.isTestSession()
       ? '<p class="tiny" style="margin:0;">测试模式：本次成绩<b>不计入</b>复习计划，下次复习时间不变。</p>'
       : (d.credited
-        ? '<p class="tiny" style="margin:0;">✓ 已写入复习计划：答对的按掌握度排到更远，答错的很快会再出现。</p>'
+        ? '<p class="tiny" style="margin:0;">✓ 已处理本次成绩：写入 ' + (d.creditedCount || 0) + ' 个词；无法判定的题目不改复习调度。</p>'
         : (auto && d.crediting
           ? '<p class="tiny" style="margin:0;">正在写入复习计划…</p>'
           : '<p class="tiny" style="margin:0;">' +
@@ -859,7 +859,7 @@ function bindDict(cb) {
       const inp = $('#dict-in')
       if (d.answered) return                    // 双击/回车连发只算一次
       const given = inp ? inp.value : ''
-      const r = judgeTyped(given, meta.expected)
+      const r = judgeTyped(given, meta.expected, { spelling: !!meta.spell })
       const ms = Math.max(0, Date.now() - (d.qStart || Date.now()))
       d.answered = {
         ok: r.ok, verdict: r.verdict, typo: r.typo, loose: r.loose,
@@ -878,12 +878,12 @@ function bindDict(cb) {
       cb()
       // 本地只能比字符串：address 是不是 deal with 的合理替代，得问一次语义复核。
       // 复核期间先不判错（详见 views.js 里同样的说明）。
-      if (r.verdict === WRONG && !meta.spell && looksLikeEnglishPhrase(given)) {
+      if ([WRONG, UNSURE].includes(r.verdict) && !meta.spell && looksLikeEnglishPhrase(given)) {
         // 复核要 6 秒，用户可能已经点「下一个」走了。用题号认领回自己那一题：
         // 对不上就只当缓存已写（verdict 已经在 judge 层落盘），不动当前界面。
         const qi = d.i
         const owner = d.answered
-        const cached = cachedVerdict(meta.expected, given)
+        const cached = cachedVerdict(meta.expected, given, { sentence: meta.sentence || '', zh: meta.zh || '', model: S.state.settings.llm_model || undefined })
         if (cached) applyVerbal(cached, qi, owner, q)
         else {
           d.answered.reviewing = true
@@ -912,7 +912,7 @@ function bindDict(cb) {
       if (verdict === 'alt') {
         a.verdict = ALT
         a.ok = true
-        if (before === WRONG) {
+        if (before !== ALT) {
           // 从"错"扳回来：错词表要撤掉，计数要搬
           d.alts = (d.alts || 0) + 1
           const i = d.wrong.indexOf(qq.term)
@@ -923,6 +923,9 @@ function bindDict(cb) {
       } else if (verdict === 'wrong') {
         a.verdict = WRONG
         a.ok = false
+        if (!d.wrong.includes(qq.term)) d.wrong.push(qq.term)
+        const row = (d.results || []).find((x) => x.id === qq.id)
+        if (row) { row.verdict = WRONG; row.ok = false }
       } else {
         // 判定不了就不算错：不写错词表、不污染后面的统计
         a.verdict = UNSURE
@@ -992,6 +995,7 @@ function bindDict(cb) {
       return          // 故意不重绘：失败立刻重绘会变成"失败→重绘→再试"的死循环
     }
     d.credited = true
+    d.creditedCount = n
     d.crediting = false
     ok('已写入 ' + n + ' 个词（按用时自动分档：快→轻松，慢/错→需要加强）')
     cb()

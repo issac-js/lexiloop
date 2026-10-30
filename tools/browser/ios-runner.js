@@ -58,12 +58,26 @@ trigger.onclick = async () => {
     assert(setting === document.querySelector('#st-new') && setting.value === '9', 'Settings were replaced');
     await tap('#me-review-pause');
     assert(document.querySelector('#review-panel').textContent.includes('正在暂停'), 'No pause feedback');
-    window.__reviewMock.releases.shift()(); await wait(150);
+    window.__reviewMock.releases.splice(0).forEach(release => release()); await wait(150);
     assert(document.querySelector('#review-panel').textContent.includes('已暂停'), 'Pause did not finish');
     window.__reviewMock.mode = 'error'; await tap('#me-review-all');
     assert(document.querySelector('#review-panel').textContent.includes('模型请求失败'), 'Failure was hidden');
     window.__reviewMock.mode = 'success'; await tap('#me-review-all');
+    for (let n = 0; n < 50 && document.querySelector('#review-hint').textContent !== '已完成'; n++) await wait(100);
     assert(document.querySelector('#review-hint').textContent === '已完成', 'Completion did not refresh');
+  });
+  await check('human correction shows a diff and preserves card scheduling', async () => {
+    await tap('[data-tab=library]');
+    const before = JSON.stringify(window.__QA.snapshot().cards);
+    await tap('[data-word]');
+    assert(document.querySelector('#word-review-report'), 'Missing persisted report');
+    await tap('#wd-edit');
+    document.querySelector('#word-fix-1').value = '安排后续预约（合成核对）';
+    document.querySelector('#word-fix-source').value = 'Isolated Safari reference';
+    await tap('#word-fix-preview'); await tap('[data-x=yes]');
+    const snapshot = window.__QA.snapshot(), corrected = snapshot.words.find(w => w.verification_status === 'corrected');
+    assert(corrected && corrected.payload.correction_history.length === 1, 'Correction history missing');
+    assert(JSON.stringify(snapshot.cards) === before, 'Correction changed scheduling');
   });
   await check('real Safari DOM new-card failure and consolidation flow persists across sync', async () => {
     await reset('learning');

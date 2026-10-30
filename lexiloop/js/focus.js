@@ -2,10 +2,10 @@
  * focus.js — 每日综合训练 UI（独立于正式 FSRS 学习进度）。
  * 本地统计不跨设备同步、不计打卡；AI 反馈只作为参考，不自动判定正确。
  */
-import * as S from './store.js?v=117'
-import * as CLOUD from './cloud.js?v=117'
-import { $, $$, esc, fail, toast } from './ui.js?v=117'
-import * as CORE from './focus-core.js?v=117'
+import * as S from './store.js?v=118'
+import * as CLOUD from './cloud.js?v=118'
+import { $, $$, esc, fail, toast } from './ui.js?v=118'
+import * as CORE from './focus-core.js?v=118'
 
 const HISTORY_KEY = 'lexiloop.focus.history.v1'
 const SCENARIOS = [

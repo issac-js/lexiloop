@@ -5,11 +5,11 @@
  * 再异步推到云端；换设备登录时从云端整体拉回。单用户跨设备不会并发改同一张卡，
  * 因此采用「以云端为权威 + 本地乐观更新」的简单模型。
  */
-import { db, getSession } from './cloud.js?v=117'
-import { LS_KEYS, DEFAULT_SETTINGS } from './config.js?v=117'
-import * as FSRS from './fsrs.js?v=117'
+import { db, getSession } from './cloud.js?v=118'
+import { LS_KEYS, DEFAULT_SETTINGS } from './config.js?v=118'
+import * as FSRS from './fsrs.js?v=118'
 /* 目标完成度的纯算术单独成模块，方便离线单测（工具页与今日页共用同一口径）。 */
-export { goalCompletion } from './goal-metrics.js?v=117'
+export { goalCompletion } from './goal-metrics.js?v=118'
 
 export const state = {
   booted: false,
@@ -888,6 +888,43 @@ export async function putWordVerification(normalized, status, note) {
   saveLocal()
 }
 
+/** Persist a version-bound report without replacing learning content or card state. */
+export async function putReviewReport(word, report) {
+  if (!word.updated_at) throw Error('请先同步词条以取得内容版本')
+  if (word.verification_status === 'corrected') throw Error('人工修正的内容受到保护')
+  const row = { verification_status: report.severity === 'blocking' ? 'flagged' : report.severity === 'advisory' ? 'reviewed' : 'verified',
+    verify_note: JSON.stringify(report), verified_at: new Date().toISOString(), updated_at: new Date(Math.max(Date.now(), Date.parse(word.updated_at) + 1)).toISOString() }
+  const res = await db().from('words').update(row).eq('normalized', word.normalized).eq('updated_at', word.updated_at).select()
+  if (res.error) throw res.error
+  if (!Array.isArray(res.data) || res.data.length !== 1) throw Error('词条已变化或没有写入权限，请同步后重试')
+  const i = state.words.findIndex(w => w.id === word.id)
+  if (i >= 0) state.words[i] = res.data[0]
+  reindex(); saveLocal()
+  return res.data[0]
+}
+
+/** Human-approved correction with a bounded before-version history and optimistic lock. */
+export async function correctWord(word, payload, source) {
+  if (!word.updated_at) throw Error('请先同步词条以取得内容版本')
+  if (!String(source || '').trim()) throw Error('请填写核实来源')
+  const previous = { ...word.payload }; delete previous.correction_history
+  const history = (word.payload && word.payload.correction_history || []).slice(-2)
+  const next = { ...payload, correction_source: String(source).trim().slice(0, 1000),
+    correction_history: history.concat([{ at: new Date().toISOString(), payload: previous,
+      verification_status: word.verification_status || null, verify_note: word.verify_note || null }]) }
+  delete next.verification_status; delete next.verify_note
+  const row = { payload: next, verification_status: 'corrected',
+    verify_note: '人工核对并修正；来源：' + next.correction_source,
+    verified_at: new Date().toISOString(), updated_at: new Date(Math.max(Date.now(), Date.parse(word.updated_at) + 1)).toISOString() }
+  const res = await db().from('words').update(row).eq('normalized', word.normalized).eq('updated_at', word.updated_at).select()
+  if (res.error) throw res.error
+  if (!Array.isArray(res.data) || res.data.length !== 1) throw Error('词条已被更新，请同步后重新核对差异')
+  const i = state.words.findIndex(w => w.id === word.id)
+  if (i >= 0) state.words[i] = res.data[0]
+  reindex(); saveLocal()
+  return res.data[0]
+}
+
 export async function putWord(normalized, lemma, payload) {
   const row = {
     normalized,
@@ -1605,6 +1642,7 @@ export async function creditGrades(list, opts) {
   let n = 0
   let asked = 0
   for (const it of list || []) {
+    if (it.verdict === 'unsure') continue
     if (!isTest && !dailyReviewAllowance()) break
     const card = state.cards.find((c) => c.word_id === it.id)
     if (!card) continue
