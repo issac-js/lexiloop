@@ -2,25 +2,25 @@
  * views.js — 全部页面
  * 每个页面导出 render()（返回 HTML）与 bind()（挂载事件），由 app.js 调度。
  */
-import * as S from './store.js?v=120'
-import * as FSRS from './fsrs.js?v=120'
-import { CARD_TYPES, ENRICH_CONCURRENCY, RECOMMENDED_SETTINGS } from './config.js?v=120'
+import * as S from './store.js?v=121'
+import * as FSRS from './fsrs.js?v=121'
+import { CARD_TYPES, ENRICH_CONCURRENCY, RECOMMENDED_SETTINGS } from './config.js?v=121'
 import {
   esc, $, $$, toast, fail, ok, openModal, closeModal, confirmDialog,
   icon, LOGO_SVG, speak, fmtDateCN, relTime, STRENGTH_ZH, REGISTER_ZH,
   listEnVoices, getVoicePref, setVoicePref, getTheme, applyTheme,
-} from './ui.js?v=120'
-import * as AUTH from './cloud.js?v=120'
-import * as ENRICH from './enrich.js?v=120'
-import * as EXP from './exporter.js?v=120'
-import { createReviewRunner, parseReviewReport, auditEntry, REVIEW_TIMEOUT_MS } from './content-review.js?v=120'
-export { REVIEW_TIMEOUT_MS } from './content-review.js?v=120'
-import { parseImport, skippedLines, DEFAULT_MAX_WORDS } from './importer.js?v=120'
+} from './ui.js?v=121'
+import * as AUTH from './cloud.js?v=121'
+import * as ENRICH from './enrich.js?v=121'
+import * as EXP from './exporter.js?v=121'
+import { createReviewRunner, parseReviewReport, auditEntry, REVIEW_TIMEOUT_MS } from './content-review.js?v=121'
+export { REVIEW_TIMEOUT_MS } from './content-review.js?v=121'
+import { parseImport, skippedLines, DEFAULT_MAX_WORDS } from './importer.js?v=121'
 
 import {
   judgeTyped, reviewSemantics, looksLikeEnglishPhrase, cachedVerdict, inflectionFeedback,
   HIT, ALT, WRONG, UNSURE,
-} from './judge.js?v=120'
+} from './judge.js?v=121'
 
 /* ═════════════════════════ 通用片段 ═════════════════════════ */
 
@@ -1063,7 +1063,7 @@ export function sessionProgress() {
 export {
   normalizeAns, judgeTyped, looksLikeEnglishPhrase, reviewSemantics, cachedVerdict,
   clearJudgeCache, HIT, ALT, WRONG, UNSURE,
-} from './judge.js?v=120'
+} from './judge.js?v=121'
 
 const REG_ZH = { formal: '正式', neutral: '中性', spoken: '口语', informal: '非正式' }
 
@@ -1115,8 +1115,8 @@ export function verdictHTML(a, opts) {
   }
   const form = inflectionFeedback(a)
   if (form) {
-    return '<div class="verdict bad">请检查词形：<b>' + esc(form.given) + '</b> → 例句使用 <b>' + esc(form.expected) + '</b>。' +
-      '检查主谓一致、时态或语态；这不等于整条搭配都没记住。' +
+    return '<div class="verdict bad">请检查词形：<b>' + esc(form.given) + '</b> → 例句使用 <b>' + esc(form.expected) + '</b>' +
+      (form.kind ? '（' + esc(form.kind) + '）' : '') + '。' +
       '<div>你的句子：' + esc(form.givenSentence) + '</div>' +
       '<div>参考填法：' + esc(form.referenceSentence) + '</div></div>'
   }
@@ -1314,13 +1314,14 @@ export function renderStudy() {
     const cz = clozeOf(word)
     session.cloze = cz || null
     if (cz) {
-      front = '<div class="ask">按句意填写空缺，注意主谓一致、时态和语态</div>' +
+      front = '<div class="ask">按句意填写空缺，注意词形（单复数、时态、语态）</div>' +
         '<div style="font-size:19px;line-height:1.7;margin-top:10px;">' + esc(cz.sentence) + '</div>' +
         (cz.zh ? '<div class="ipa" style="margin-top:8px;">' + esc(cz.zh) + '</div>' : '')
       // 送判分/复核的必须是**挖空后**的句子（cz.sentence），不是原文：
       // 原文里答案还在（"She complimented him…"），复核模型会看到答案已填入，
       // 判断必然受干扰 —— 2026-10-13 "compliments vs complimented" 就栽在这里。
-      interactive = { kind: 'type', expected: cz.answer, sentence: cz.sentence || cz.raw, zh: cz.zh }
+      interactive = { kind: 'type', expected: cz.answer, sentence: cz.sentence || cz.raw, zh: cz.zh,
+        pos: (p.senses || []).map((s) => s && s.pos).filter(Boolean) }
       revealLabel = '看答案'
     } else {
       // 例句里挖不出空：退化成"看中文说搭配"，也比干看一个单词强
@@ -1614,6 +1615,7 @@ export function bindStudy(go, onChanged) {
     session.answered = {
       ok: r.ok, verdict: r.verdict, typo: r.typo, loose: r.loose,
       empty: r.empty, given: given, expected: it.expected, kind: it.kind, sentence: it.sentence || '',
+      pos: it.pos || [],
     }
     session.shown = true
     session.cardShownAt = Date.now()

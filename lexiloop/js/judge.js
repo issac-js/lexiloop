@@ -245,11 +245,53 @@ function useFormMode(o) {
   return /_{3,}/.test(String(o.sentence || '')) && !!inflectionDifference(o.expected, o.given)
 }
 
+/** 这次词形差异属于哪一类 —— 归因必须说对，否则等于误导用户。
+ *
+ *  为什么必须有它：旧文案把词形差异一律描述为"主谓一致、时态或语态"，
+ *  可 vehicle → vehicles 是**名词单复数**，与那三者都无关。类型说错比不说更糟。
+ *  判定顺序：be 动词 → 复数/三单（按词性区分）→ 时态 → 比较级 → 兜底"词形"。
+ *  pos 缺失或词性不在已知集合时，退回同时覆盖两种可能的说法，绝不硬猜单一类型。 */
+export function inflectionKind(expected, given, pos) {
+  const e = String(expected || '').toLowerCase(), g = String(given || '').toLowerCase()
+  const ps = Array.isArray(pos) ? pos.map((x) => String(x).toLowerCase()) : []
+  const has = (kw) => ps.some((p) => p.indexOf(kw) >= 0)
+  const isNoun = has('noun') || has('名词')
+  const isVerb = has('verb') || has('动词')
+  const isAdj = has('adj') || has('形容词')
+
+  if (/^(is|are|was|were|am|be)$/.test(e)) return '主谓一致·be 动词'
+
+  /* CVC 双写：run→running、big→bigger。纯形态判定，不判重音，
+     最多把 opening 这类也归为进行时（标签仍正确，只是拼写规则不同）。 */
+  const vowel = (c) => 'aeiou'.indexOf(c) >= 0
+  const dbl = (suf) => {
+    if (g.length < 3) return false
+    const L = g[g.length - 1], P = g[g.length - 2], Q = g[g.length - 3]
+    if (vowel(L) || 'wxy'.indexOf(L) >= 0) return false
+    if (!vowel(P) || vowel(Q)) return false
+    return e === g + L + suf
+  }
+
+  const stemY = g.endsWith('y') ? g.slice(0, -1) : ''
+  const plural = e === g + 's' || e === g + 'es' || (!!stemY && e === stemY + 'ies')
+  if (plural) {
+    if (isNoun && !isVerb) return '名词单复数'
+    if (isVerb && !isNoun) return '主谓一致·第三人称单数'
+    return '单复数或第三人称单数'
+  }
+  if (e === g + 'ed' || e === g + 'd' || (!!stemY && e === stemY + 'ied') || dbl('ed')) return '时态·过去式'
+  if (e === g + 'ing' || (g.endsWith('e') && e === g.slice(0, -1) + 'ing') || dbl('ing')) return '时态·进行时'
+  if (e === g + 'er' || e === g + 'est' || dbl('er') || dbl('est')) return isAdj ? '形容词比较级' : '比较级'
+  if (e === g + 'ly') return '副词形式'
+  return '词形'
+}
+
 /** Feedback evidence only. It cannot change verdict, grade, or scheduling. */
 export function inflectionFeedback(a) {
   if (!a || a.verdict !== WRONG || !useFormMode(a)) return null
   return {
     ...inflectionDifference(a.expected, a.given),
+    kind: inflectionKind(a.expected, a.given, a.pos),
     givenSentence: String(a.sentence).replace(/_{3,}/, () => String(a.given)),
     referenceSentence: String(a.sentence).replace(/_{3,}/, () => String(a.expected)),
   }
