@@ -336,7 +336,7 @@ textarea.input { resize: vertical; min-height: 120px; line-height: 1.6; }
 
 /* 作答交互 */
 .ans-in { font-size: 17px; text-align: center; margin-top: 12px; }
-.verdict { font-size: 14px; margin: 12px 0 2px; padding: 9px 12px; border-radius: 10px; line-height: 1.6; }
+.verdict { font-size: 14px; margin: 12px 0 2px; padding: 9px 12px; border-radius: 10px; line-height: 1.6; overflow-wrap: anywhere; }
 .verdict.good { background: var(--ok-soft, rgba(34,170,90,.12)); color: var(--ok, #1d8f4d); }
 .verdict.bad { background: var(--bad-soft, rgba(220,70,70,.12)); color: var(--bad, #c5393c); }
 /* 待复核：判定不了的时候用中性色，绝不能用红色 —— 红条等于告诉用户"你错了"，
