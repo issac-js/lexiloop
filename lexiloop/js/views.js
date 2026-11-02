@@ -2,25 +2,25 @@
  * views.js — 全部页面
  * 每个页面导出 render()（返回 HTML）与 bind()（挂载事件），由 app.js 调度。
  */
-import * as S from './store.js?v=123'
-import * as FSRS from './fsrs.js?v=123'
-import { CARD_TYPES, ENRICH_CONCURRENCY, RECOMMENDED_SETTINGS } from './config.js?v=123'
+import * as S from './store.js?v=124'
+import * as FSRS from './fsrs.js?v=124'
+import { CARD_TYPES, ENRICH_CONCURRENCY, RECOMMENDED_SETTINGS } from './config.js?v=124'
 import {
   esc, $, $$, toast, fail, ok, openModal, closeModal, confirmDialog,
   icon, LOGO_SVG, speak, fmtDateCN, relTime, STRENGTH_ZH, REGISTER_ZH,
   listEnVoices, getVoicePref, setVoicePref, getTheme, applyTheme,
-} from './ui.js?v=123'
-import * as AUTH from './cloud.js?v=123'
-import * as ENRICH from './enrich.js?v=123'
-import * as EXP from './exporter.js?v=123'
-import { createReviewRunner, parseReviewReport, auditEntry, REVIEW_TIMEOUT_MS } from './content-review.js?v=123'
-export { REVIEW_TIMEOUT_MS } from './content-review.js?v=123'
-import { parseImport, skippedLines, DEFAULT_MAX_WORDS } from './importer.js?v=123'
+} from './ui.js?v=124'
+import * as AUTH from './cloud.js?v=124'
+import * as ENRICH from './enrich.js?v=124'
+import * as EXP from './exporter.js?v=124'
+import { createReviewRunner, parseReviewReport, auditEntry, REVIEW_TIMEOUT_MS } from './content-review.js?v=124'
+export { REVIEW_TIMEOUT_MS } from './content-review.js?v=124'
+import { parseImport, skippedLines, DEFAULT_MAX_WORDS } from './importer.js?v=124'
 
 import {
   judgeTyped, reviewSemantics, looksLikeEnglishPhrase, cachedVerdict, inflectionFeedback, articleDifference,
   HIT, ALT, WRONG, UNSURE,
-} from './judge.js?v=123'
+} from './judge.js?v=124'
 
 /* ═════════════════════════ 通用片段 ═════════════════════════ */
 
@@ -299,15 +299,21 @@ function clozeOf(word) {
     if (!ex || !ex.en) continue
     const core = String(c.pattern || '').replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim()
 
-    // ① 整条搭配（词干级，容忍词形变化）
-    if (core) {
-      const re = buildRe(core.split(' '))
+    /* ① 先挖「目标词本身」：答案是这个词条，学什么就填什么，判分口径唯一。
+       为什么把它放在整条搭配之前 —— 旧顺序先用整条 pattern 挖空，答案可达 2–6 词
+       （"overflowed with water"、"could be handled with discretion"），
+       用户只填核心词就被判错。实测（2862 次复习）：3 词以上词条错误率 7.8%，
+       是 1–2 词档（4.3%）的近两倍，而 phrase 类词条（in the order they were
+       received）本来就该填整条，不受此改动影响。 */
+    if (term) {
+      const re = buildRe(term.split(' '))
       const hit = re ? shoot(ex.en, re) : null
       if (hit) return { sentence: hit.sentence, zh: ex.zh, answer: hit.answer, raw: String(ex.en) }
     }
-    // ② 搭配对不上就挖目标词本身（同样词干级）
-    if (term) {
-      const re2 = buildRe(term.split(' '))
+    /* ② 这个词条没有原样出现在这句里（例句只用到了搭配的一部分），
+       才退化为挖整条搭配 —— 保证仍能出题，不至于变成「无题可出」。 */
+    if (core) {
+      const re2 = buildRe(core.split(' '))
       const hit2 = re2 ? shoot(ex.en, re2) : null
       if (hit2) return { sentence: hit2.sentence, zh: ex.zh, answer: hit2.answer, raw: String(ex.en) }
     }
@@ -1063,7 +1069,7 @@ export function sessionProgress() {
 export {
   normalizeAns, judgeTyped, looksLikeEnglishPhrase, reviewSemantics, cachedVerdict,
   clearJudgeCache, HIT, ALT, WRONG, UNSURE,
-} from './judge.js?v=123'
+} from './judge.js?v=124'
 
 const REG_ZH = { formal: '正式', neutral: '中性', spoken: '口语', informal: '非正式' }
 
