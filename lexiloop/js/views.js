@@ -1093,7 +1093,8 @@ export function verdictHTML(a, opts) {
       '本题的' + esc(word) + '是 <b>' + exp + '</b>，顺手把这条搭配记一下就行。</div>'
   }
   if (a.verdict === UNSURE) {
-    return '<div class="verdict unsure">这道题没法自动判定，<b>不算你错</b>。' +
+    return '<div class="verdict unsure">' +
+      (articleDifference(a.expected, a.given) ? '这处冠词需要结合语境判断，暂<b>不算你错</b>。' : '这道题没法自动判定，<b>不算你错</b>。') +
       '参考' + esc(word) + '：<b>' + exp + '</b>' +
       (a.given ? '　你写的：' + esc(a.given) : '') + '</div>'
   }
