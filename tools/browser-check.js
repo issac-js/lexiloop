@@ -68,13 +68,31 @@ async function main() {
             const html = V.verdictHTML({...a,sentence:'<img src=x onerror=alert(1)> ________'});
             return {text:element.textContent,verdict:a.verdict,local:J.judgeTyped(a.given,a.expected).verdict,
               safe:!/<img src=x/.test(html),alt:V.verdictHTML({...a,given:'deducts money from',verdict:'alt',ok:true}),
-              unsure:V.verdictHTML({...a,verdict:'unsure'})};
+              unsure:V.verdictHTML({...a,verdict:'unsure'}),
+              article:V.verdictHTML({expected:'have jurisdiction over',given:'have the jurisdiction over',verdict:'unsure'})};
           }, VERSION);
-          assert.match(result.text, /请检查词形/);
+          assert.match(result.text, /已想起目标表达/);
           assert.match(result.text, /The bank deduct money from my account without notice/);
           assert.match(result.text, /The bank deducted money from my account without notice/);
           assert.equal(result.verdict, 'wrong'); assert.equal(result.local, 'unsure'); assert.equal(result.safe, true);
-          assert.match(result.alt, /你的表达也对/); assert.match(result.unsure, /不算你错/);
+          assert.match(result.alt, /你的表达也对/); assert.match(result.unsure, /不算你错/); assert.match(result.article, /冠词需要结合语境判断/);
+        });
+        await check('study details start collapsed and grading stays reachable while details expand', async () => {
+          await open('learning'); await tab('today'); await page.locator('#start-study').click();
+          await page.locator('#ans-reveal,#reveal').first().click();
+          const details = page.locator('#study-details');
+          assert.equal(await details.getAttribute('open'), null);
+          const bar = page.locator('.study-grade-bar');
+          await details.locator('summary').first().click(); assert.notEqual(await details.getAttribute('open'), null);
+          const box = await bar.boundingBox();
+          assert.ok(box && box.y >= 0 && box.y + box.height <= variant.options.viewport.height, JSON.stringify(box));
+          const nav = await page.locator('.tabbar').boundingBox();
+          if (variant.options.viewport.width < 760) assert.ok(box.y + box.height <= nav.y + 1, JSON.stringify({box,nav}));
+          await details.locator('summary').first().click();
+          await page.locator('[data-g="1"]').click(); await pause(400);
+          assert.equal(await page.evaluate(() => window.__QA.snapshot().reviews.length), 1);
+          // This interaction consumes the one-card learning fixture. Leave later tests a fresh fixture.
+          await page.evaluate(() => localStorage.removeItem('__lexiloop_fixture_learning'));
         });
         await check('six-page layout, controls and screenshots', async () => {
           await open();
