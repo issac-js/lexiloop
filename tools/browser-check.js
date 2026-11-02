@@ -91,7 +91,9 @@ async function main() {
           await details.locator('summary').first().click();
           // The lowest optional control must be reachable above the fixed bar, even with details closed.
           const reachable = async () => {
-            await page.locator('#mine-go').scrollIntoViewIfNeeded();
+            // Native scrollIntoView ignores fixed overlays. Exercise the user's scroll-to-end path.
+            await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+            await pause(100);
             return page.evaluate(() => {
               const e = document.querySelector('#mine-go'), b = document.querySelector('.study-grade-bar');
               const r = e.getBoundingClientRect(), bar = b.getBoundingClientRect();
@@ -110,6 +112,7 @@ async function main() {
           await tab('today');
           assert.equal(await page.locator('#main').evaluate(e => e.style.getPropertyValue('--study-grade-clearance')), '');
           await tab('study');
+          await page.locator('#ans-reveal,#reveal').first().click();
           await page.locator('[data-g="1"]').click(); await pause(400);
           assert.equal(await page.evaluate(() => window.__QA.snapshot().reviews.length), 1);
           // This interaction consumes the one-card learning fixture. Leave later tests a fresh fixture.
