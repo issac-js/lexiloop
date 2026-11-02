@@ -5,11 +5,11 @@
  * 再异步推到云端；换设备登录时从云端整体拉回。单用户跨设备不会并发改同一张卡，
  * 因此采用「以云端为权威 + 本地乐观更新」的简单模型。
  */
-import { db, getSession } from './cloud.js?v=124'
-import { LS_KEYS, DEFAULT_SETTINGS } from './config.js?v=124'
-import * as FSRS from './fsrs.js?v=124'
+import { db, getSession } from './cloud.js?v=125'
+import { LS_KEYS, DEFAULT_SETTINGS } from './config.js?v=125'
+import * as FSRS from './fsrs.js?v=125'
 /* 目标完成度的纯算术单独成模块，方便离线单测（工具页与今日页共用同一口径）。 */
-export { goalCompletion } from './goal-metrics.js?v=124'
+export { goalCompletion } from './goal-metrics.js?v=125'
 
 export const state = {
   booted: false,

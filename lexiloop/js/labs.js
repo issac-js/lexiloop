@@ -3,16 +3,9 @@
  * 与 game.js 的关系：labs 自己不持有 mode 状态，由 game.js 用 hasLab/renderLab/bindLab
  * 三个入口调用，避免两个模块互相 import 成环。
  */
-import * as S from './store.js?v=124'
-import { $, $$, esc, icon, toast, fail, ok, speak } from './ui.js?v=124'
-import { normalizeAns, judgeTyped, buildChoices, whyNote } from './views.js?v=124'
-
-/** 答错时的辨析提示；没有可用信息就不渲染 */
-function whyBlock(word) {
-  const note = whyNote(word)
-  if (!note) return ''
-  return '<p class="tiny" style="margin:8px 0 0;color:var(--ink-2);">💡 ' + esc(note) + '</p>'
-}
+import * as S from './store.js?v=125'
+import { $, $$, esc, icon, toast, fail, ok, speak } from './ui.js?v=125'
+import { normalizeAns, judgeTyped, buildChoices, whyNote, whyBlockHTML } from './views.js?v=125'
 
 export const LAB_MODES = ['battle', 'sentence', 'speech']
 
@@ -99,7 +92,7 @@ function renderBattle() {
       (a ? ' disabled' : '') + '>' + esc(c.text) + '</button>').join('') + '</div>' +
     (a ? '<div class="verdict ' + (a.ok ? 'good' : 'bad') + '">' +
       (a.ok ? '正确！造成 18 点伤害' : '不对 —— 被反击 12 点。正确搭配：<b>' + esc(a.correct) + '</b>') +
-      '</div>' + (!a.ok ? whyBlock(b.rounds[b.i].w) : '') +
+      '</div>' + (!a.ok ? whyBlockHTML(b.rounds[b.i].w) : '') +
       '<div class="row" style="justify-content:center;margin-top:10px;">' +
       '<button class="btn primary" id="lab-battle-next">' +
       (b.i + 1 >= b.rounds.length ? '看结果' : '下一回合') + '</button>' +

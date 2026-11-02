@@ -2,25 +2,25 @@
  * views.js — 全部页面
  * 每个页面导出 render()（返回 HTML）与 bind()（挂载事件），由 app.js 调度。
  */
-import * as S from './store.js?v=124'
-import * as FSRS from './fsrs.js?v=124'
-import { CARD_TYPES, ENRICH_CONCURRENCY, RECOMMENDED_SETTINGS } from './config.js?v=124'
+import * as S from './store.js?v=125'
+import * as FSRS from './fsrs.js?v=125'
+import { CARD_TYPES, ENRICH_CONCURRENCY, RECOMMENDED_SETTINGS } from './config.js?v=125'
 import {
   esc, $, $$, toast, fail, ok, openModal, closeModal, confirmDialog,
   icon, LOGO_SVG, speak, fmtDateCN, relTime, STRENGTH_ZH, REGISTER_ZH,
   listEnVoices, getVoicePref, setVoicePref, getTheme, applyTheme,
-} from './ui.js?v=124'
-import * as AUTH from './cloud.js?v=124'
-import * as ENRICH from './enrich.js?v=124'
-import * as EXP from './exporter.js?v=124'
-import { createReviewRunner, parseReviewReport, auditEntry, REVIEW_TIMEOUT_MS } from './content-review.js?v=124'
-export { REVIEW_TIMEOUT_MS } from './content-review.js?v=124'
-import { parseImport, skippedLines, DEFAULT_MAX_WORDS } from './importer.js?v=124'
+} from './ui.js?v=125'
+import * as AUTH from './cloud.js?v=125'
+import * as ENRICH from './enrich.js?v=125'
+import * as EXP from './exporter.js?v=125'
+import { createReviewRunner, parseReviewReport, auditEntry, REVIEW_TIMEOUT_MS } from './content-review.js?v=125'
+export { REVIEW_TIMEOUT_MS } from './content-review.js?v=125'
+import { parseImport, skippedLines, DEFAULT_MAX_WORDS } from './importer.js?v=125'
 
 import {
   judgeTyped, reviewSemantics, looksLikeEnglishPhrase, cachedVerdict, inflectionFeedback, articleDifference,
   HIT, ALT, WRONG, UNSURE,
-} from './judge.js?v=124'
+} from './judge.js?v=125'
 
 /* ═════════════════════════ 通用片段 ═════════════════════════ */
 
@@ -1069,7 +1069,7 @@ export function sessionProgress() {
 export {
   normalizeAns, judgeTyped, looksLikeEnglishPhrase, reviewSemantics, cachedVerdict,
   clearJudgeCache, HIT, ALT, WRONG, UNSURE,
-} from './judge.js?v=124'
+} from './judge.js?v=125'
 
 const REG_ZH = { formal: '正式', neutral: '中性', spoken: '口语', informal: '非正式' }
 
@@ -1144,6 +1144,16 @@ export function whyNote(word) {
   const c = (p.collocations || [])[0]
   if (c && c.register && REG_ZH[c.register]) return '这条是' + REG_ZH[c.register] + '语域的表达，注意别用错场合'
   return ''
+}
+
+/** 答错时的辨析提示块；没有可用信息返回空串。
+ *  为什么提到这里统一：原来 game.js 和 labs.js 各写了一份一模一样的 whyBlock，
+ *  而**主学习流程（study）压根没调用** —— 96.2% 的词条都有 confusables，
+ *  但用户在最主要的答题场景里从来看不到，等于白存。三处共用这一个实现即可。 */
+export function whyBlockHTML(word) {
+  const note = whyNote(word)
+  if (!note) return ''
+  return '<p class="tiny" style="margin:8px 0 0;color:var(--ink-2);">💡 ' + esc(note) + '</p>'
 }
 
 /** 从同词库其它词条里抽干扰项，组选择题 */
@@ -1377,8 +1387,9 @@ export function renderStudy() {
 
   const suggest = suggestGrade()
 
-  // 作答反馈条
-  const feedback = verdictHTML(session.answered)
+  // 作答反馈条 + 答错时的辨析（易混词 / 语域），与练习场、labs 共用同一实现
+  const feedback = verdictHTML(session.answered) +
+    (session.answered && !session.answered.ok ? whyBlockHTML(word) : '')
 
   // 作答区（还没揭晓答案时）
   let answerArea = ''

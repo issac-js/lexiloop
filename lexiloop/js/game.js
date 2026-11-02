@@ -4,17 +4,17 @@
  * 因此游戏本身不计分；结束时给一个**可选**的"把这次表现记进复习计划"，
  * 由用户自己决定是否写入调度（避免游戏手感污染记忆曲线）。
  */
-import * as S from './store.js?v=124'
-import * as CLOUD from './cloud.js?v=124'
-import { $, $$, esc, icon, toast, fail, ok, speak, openModal, closeModal, confirmDialog } from './ui.js?v=124'
+import * as S from './store.js?v=125'
+import * as CLOUD from './cloud.js?v=125'
+import { $, $$, esc, icon, toast, fail, ok, speak, openModal, closeModal, confirmDialog } from './ui.js?v=125'
 import {
-  normalizeAns, judgeTyped, buildChoices, whyNote, verdictHTML,
+  normalizeAns, judgeTyped, buildChoices, whyNote, whyBlockHTML, verdictHTML,
   reviewSemantics, looksLikeEnglishPhrase, cachedVerdict,
   dataStateCard,
   HIT, ALT, WRONG, UNSURE,
-} from './views.js?v=124'
-import * as LABS from './labs.js?v=124'
-import * as FOCUS from './focus.js?v=124'
+} from './views.js?v=125'
+import * as LABS from './labs.js?v=125'
+import * as FOCUS from './focus.js?v=125'
 
 const G = { mode: null, match: null, dict: null, quiz: null, chat: null, timer: null, story: null, size: 0 }
 
@@ -87,13 +87,6 @@ export function streakStats() {
     prev = s
   }
   return { cur, best: Math.max(best, cur), total: days.length }
-}
-
-/** 答错时的一句辨析；没有可用信息就不渲染 */
-function whyBlock(word) {
-  const note = whyNote(word)
-  if (!note) return ''
-  return '<p class="tiny" style="margin:8px 0 0;color:var(--ink-2);">💡 ' + esc(note) + '</p>'
 }
 
 /**
@@ -826,7 +819,7 @@ function renderDict() {
     (a
       ? verdictHTML(a, { taskLabel: '目标表达' }) +
         // 答错时补一句"为什么"，避免同一个坑反复踩
-        (a.verdict === WRONG ? whyBlock(S.wordOf({ word_id: q.id })) : '')
+        (a.verdict === WRONG ? whyBlockHTML(S.wordOf({ word_id: q.id })) : '')
       : '') +
     // 选择题模式下不需要输入框和"提交"—— 选项本身就是作答区
     (meta.choice ? '' :
@@ -1159,7 +1152,7 @@ function renderQuiz() {
     (a ? '<div class="verdict ' + (a.ok ? 'good' : 'bad') + '">' +
       (a.ok ? '答对了' : '不对，答案是 <b>' + esc(a.expected) + '</b>') +
       (a.given ? '　你写的：' + esc(a.given) : '') + '</div>' +
-      (!a.ok ? whyBlock(cur.item) : '') : '') +
+      (!a.ok ? whyBlockHTML(cur.item) : '') : '') +
     (cur.kind !== 'choice-zh' && !a
       ? '<input class="input ans-in" id="quiz-in" placeholder="打出来，回车提交" autocomplete="off" spellcheck="false">'
       : '') +
