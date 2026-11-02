@@ -2,25 +2,25 @@
  * views.js — 全部页面
  * 每个页面导出 render()（返回 HTML）与 bind()（挂载事件），由 app.js 调度。
  */
-import * as S from './store.js?v=121'
-import * as FSRS from './fsrs.js?v=121'
-import { CARD_TYPES, ENRICH_CONCURRENCY, RECOMMENDED_SETTINGS } from './config.js?v=121'
+import * as S from './store.js?v=122'
+import * as FSRS from './fsrs.js?v=122'
+import { CARD_TYPES, ENRICH_CONCURRENCY, RECOMMENDED_SETTINGS } from './config.js?v=122'
 import {
   esc, $, $$, toast, fail, ok, openModal, closeModal, confirmDialog,
   icon, LOGO_SVG, speak, fmtDateCN, relTime, STRENGTH_ZH, REGISTER_ZH,
   listEnVoices, getVoicePref, setVoicePref, getTheme, applyTheme,
-} from './ui.js?v=121'
-import * as AUTH from './cloud.js?v=121'
-import * as ENRICH from './enrich.js?v=121'
-import * as EXP from './exporter.js?v=121'
-import { createReviewRunner, parseReviewReport, auditEntry, REVIEW_TIMEOUT_MS } from './content-review.js?v=121'
-export { REVIEW_TIMEOUT_MS } from './content-review.js?v=121'
-import { parseImport, skippedLines, DEFAULT_MAX_WORDS } from './importer.js?v=121'
+} from './ui.js?v=122'
+import * as AUTH from './cloud.js?v=122'
+import * as ENRICH from './enrich.js?v=122'
+import * as EXP from './exporter.js?v=122'
+import { createReviewRunner, parseReviewReport, auditEntry, REVIEW_TIMEOUT_MS } from './content-review.js?v=122'
+export { REVIEW_TIMEOUT_MS } from './content-review.js?v=122'
+import { parseImport, skippedLines, DEFAULT_MAX_WORDS } from './importer.js?v=122'
 
 import {
-  judgeTyped, reviewSemantics, looksLikeEnglishPhrase, cachedVerdict, inflectionFeedback,
+  judgeTyped, reviewSemantics, looksLikeEnglishPhrase, cachedVerdict, inflectionFeedback, articleDifference,
   HIT, ALT, WRONG, UNSURE,
-} from './judge.js?v=121'
+} from './judge.js?v=122'
 
 /* ═════════════════════════ 通用片段 ═════════════════════════ */
 
@@ -1063,7 +1063,7 @@ export function sessionProgress() {
 export {
   normalizeAns, judgeTyped, looksLikeEnglishPhrase, reviewSemantics, cachedVerdict,
   clearJudgeCache, HIT, ALT, WRONG, UNSURE,
-} from './judge.js?v=121'
+} from './judge.js?v=122'
 
 const REG_ZH = { formal: '正式', neutral: '中性', spoken: '口语', informal: '非正式' }
 
@@ -1083,7 +1083,7 @@ export function verdictHTML(a, opts) {
   const word = o.taskLabel || '目标搭配'
   const exp = esc(a.expected || '')
   if (a.empty) {
-    return '<div class="verdict bad">没有作答 —— 记不住就说记不住，评分才有意义</div>'
+    return '<div class="verdict bad">这次没想起来也没关系。先看一遍表达，再选择适合的复习间隔。</div>'
   }
   if (a.reviewing) {
     return '<div class="verdict unsure">正在核对你的表达…（这道题的目标是 <b>' + exp + '</b>）</div>'
@@ -1115,12 +1115,12 @@ export function verdictHTML(a, opts) {
   }
   const form = inflectionFeedback(a)
   if (form) {
-    return '<div class="verdict bad">请检查词形：<b>' + esc(form.given) + '</b> → 例句使用 <b>' + esc(form.expected) + '</b>' +
+    return '<div class="verdict coach">已想起目标表达，再调整一下词形：<b>' + esc(form.given) + '</b> → 例句使用 <b>' + esc(form.expected) + '</b>' +
       (form.kind ? '（' + esc(form.kind) + '）' : '') + '。' +
-      '<div>你的句子：' + esc(form.givenSentence) + '</div>' +
-      '<div>参考填法：' + esc(form.referenceSentence) + '</div></div>'
+      '<details class="feedback-detail"><summary>查看整句对照</summary><div>你的句子：' + esc(form.givenSentence) + '</div>' +
+      '<div>参考填法：' + esc(form.referenceSentence) + '</div></details></div>'
   }
-  return '<div class="verdict bad">' + (a.sentence ? '这次填写未通过检查，参考填法是 ' : '不对，正确答案是 ') + '<b>' + exp + '</b>　你写的：' + esc(a.given) + '</div>'
+  return '<div class="verdict bad">' + (a.sentence ? '这次先记住这个用法，参考填法是 ' : '可以这样表达： ') + '<b>' + exp + '</b>　你写的：' + esc(a.given) + '</div>'
 }
 
 /**
@@ -1194,6 +1194,7 @@ function suggestGrade() {
   // 用"显示选项"选对的：识别成功，但不是无提示产出。封顶到"吃力"，
   // 让这张卡更快回来做一次真正自己想出来的 —— 选择题答对≠能自然用出来。
   if (a.assist && a.ok) return 2
+  if (inflectionFeedback(a)) return 2
   if (!a.ok) return 1
   if (a.typo) return 2
   const secs = (Date.now() - (session.cardShownAt || Date.now())) / 1000
@@ -1467,7 +1468,7 @@ export function renderStudy() {
 
   return (
     '<h1 class="sr-only">学习</h1>' +
-    '<div class="study">' +
+    '<div class="study' + (session.shown ? ' study-revealed' : '') + '">' +
     '<div class="study-bar">' +
     '<button class="btn sm ghost" id="study-exit" title="退出本次学习">' + icon('back', 18) + '</button>' +
     '<div class="progress"><i style="width:' + progress + '%"></i></div>' +
@@ -1499,14 +1500,14 @@ export function renderStudy() {
     (session.shown ? '' : (interactive ? '' : '<div class="btn-group" style="justify-content:center;margin-top:12px;">' +
       '<button class="btn soft" id="ans-check">已尝试回忆，核对答案</button>' +
       '<button class="btn ghost" id="reveal">' + esc(revealLabel) + '</button></div>')) +
-    (session.shown ? '<div class="answer">' + answerBody + '</div>' : '') +
     (session.shown
-      ? '<div class="grades' + (suggest ? ' has-sug' : '') + '">' + gradeButtons + '</div>' +
+      ? '<div class="study-grade-bar"><div class="grades' + (suggest ? ' has-sug' : '') + '">' + gradeButtons + '</div>' +
         '<p class="tiny center" style="margin-top:10px;">' +
-        (suggest != null ? '已根据你的作答<b>预选</b>了一个评分，可改。' : '如实评分，算法才能算准你的记忆。') +
-        '评分会<b>立即</b>写进复习计划，决定这张卡下次什么时候出现。' +
-        '</p>'
+        (suggest != null ? '已根据作答提供建议，你可以自行选择。' : '按这次回忆的轻松程度选择。') +
+        '用于安排下次复习。' +
+        '</p></div>'
       : '') +
+    (session.shown ? '<details class="answer study-details" id="study-details"><summary>查看释义、搭配与例句</summary>' + answerBody + '</details>' : '') +
     '</div>' +
     (session.shown
       ? '<div class="card"><div class="card-head"><h2>造个句（可选）</h2></div>' +

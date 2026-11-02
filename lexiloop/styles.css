@@ -691,3 +691,18 @@ textarea.input { resize: vertical; min-height: 120px; line-height: 1.6; }
 .content-review-report, .modal { overflow-wrap: anywhere; }
 .word-detail-actions { flex-wrap: wrap; }
 .word-detail-actions .btn { flex: 1 1 120px; }
+
+/* Brief coaching and optional reference material keep recall and grading close. */
+.verdict.coach { background: var(--brand-soft); color: var(--ink-2); }
+.study-details > summary, .feedback-detail > summary { cursor: pointer; padding: 12px 0; min-height: 44px; font-weight: 600; }
+.study-details[open] > summary { margin-bottom: 12px; }
+.study-grade-bar { background: var(--surface); }
+@media (max-width: 759px) {
+  .study-revealed { padding-bottom: 150px; }
+  .study-grade-bar { position: fixed; left: 0; right: 0; bottom: calc(64px + var(--safe-b)); z-index: 35;
+    padding: 8px max(12px, env(safe-area-inset-right)) 4px max(12px, env(safe-area-inset-left));
+    border-top: 1px solid var(--line); box-shadow: 0 -4px 16px #0000000a; }
+  .study-grade-bar .grades { margin-top: 0; }
+  .study-grade-bar p { margin: 4px 0 !important; font-size: 11px; }
+  body.kbd .study-grade-bar { position: static; padding: 0; border: 0; box-shadow: none; }
+}

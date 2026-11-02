@@ -23,7 +23,7 @@
 
 /* v3：词形变体改用"代入式语法判断"专用提示词 —— 旧问法实测会波动
    （同一用例 8 次采样 7 次对、1 次错），旧缓存里的结论不能重放。 */
-const LS_CACHE = 'lexiloop.judgecache.v5'
+const LS_CACHE = 'lexiloop.judgecache.v6'
 const CACHE_MAX = 400
 const SEMANTIC_TIMEOUT_MS = 6000
 
@@ -175,7 +175,15 @@ export function cachedVerdict(expected, given, context) {
   return c && Date.now() - c.t < 30 * 86400000 && ['alt', 'wrong'].includes(c.v) ? c.v : null
 }
 
+/** Article differences need context; never erase articles or directly accept them. */
+export function articleDifference(expected, given) {
+  const e = normalizeAns(expected), g = normalizeAns(given)
+  const strip = x => x.split(' ').filter(w => !['a', 'an', 'the'].includes(w)).join(' ')
+  return !!e && !!g && e !== g && strip(e) !== '' && strip(e) === strip(g)
+}
+
 const SYS_PROMPT =
+  '先区分明确错误与可接受但不够自然的表达；仅不常见、风格或冠词可选差异不能直接判错。\n' +
   '你是英语判分助手。用户在做"用指定搭配完成句子"的填空练习。\n' +
   '判断用户填写的表达**在这个句子的语境里**是否是成立的英语。\n' +
   '只输出 JSON，不要解释：{"verdict":"alt"或"wrong"或"unsure"}\n' +
@@ -351,6 +359,7 @@ export async function reviewSemantics(o) {
       const j = JSON.parse(clean)
       v = String((j && j.verdict) || '').toLowerCase()
     } catch (e) { return { verdict: null, cached: false } }
+    if (v === 'wrong' && articleDifference(o.expected, o.given)) return { verdict: null, cached: false }
     if (v !== 'alt' && v !== 'wrong') return { verdict: null, cached: false }
 
     loadCache()[key] = { v: v, t: Date.now() }

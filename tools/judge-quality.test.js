@@ -61,3 +61,13 @@ test('v4 semantic verdicts are invalidated after contextual form prompt changes'
  global.localStorage.setItem('lexiloop.judgecache.v4',JSON.stringify({'old':{v:'wrong',t:Date.now()}}));
  assert.equal(J.cachedVerdict('interceded','intercedes',{sentence:'She ________ with the dean.'}),null);
 }));
+
+
+test('article-only differences stay context-dependent and cannot be cached as confident wrong',()=>fixture(async J=>{
+ const o={expected:'have jurisdiction over',given:'have the jurisdiction over',sentence:'The court does not ________ this dispute.'};
+ assert.equal(J.judgeTyped(o.given,o.expected).verdict,'unsure');assert.equal(J.articleDifference(o.expected,o.given),true);
+ assert.equal(J.articleDifference('have jurisdiction over','have no jurisdiction over'),false);
+ assert.equal((await J.reviewSemantics({...o,chat:async()=>'{"verdict":"wrong"}'})).verdict,null);
+ assert.equal(J.cachedVerdict(o.expected,o.given,o),null);
+ assert.equal((await J.reviewSemantics({...o,chat:async()=>'{"verdict":"alt"}'})).verdict,'alt');
+}));
