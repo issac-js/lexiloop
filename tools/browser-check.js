@@ -89,6 +89,27 @@ async function main() {
           const nav = await page.locator('.tabbar').boundingBox();
           if (variant.options.viewport.width < 760) assert.ok(box.y + box.height <= nav.y + 1, JSON.stringify({box,nav}));
           await details.locator('summary').first().click();
+          // The lowest optional control must be reachable above the fixed bar, even with details closed.
+          const reachable = async () => {
+            await page.locator('#mine-go').scrollIntoViewIfNeeded();
+            return page.evaluate(() => {
+              const e = document.querySelector('#mine-go'), b = document.querySelector('.study-grade-bar');
+              const r = e.getBoundingClientRect(), bar = b.getBoundingClientRect();
+              return { bottom:r.bottom, top:bar.top, fixed:getComputedStyle(b).position === 'fixed',
+                exposed:e.contains(document.elementFromPoint(r.x + r.width/2, r.y + r.height/2)),
+                reserve:parseFloat(getComputedStyle(document.querySelector('#main')).paddingBottom),
+                need:innerHeight - bar.top };
+            });
+          };
+          for (const expanded of [false, true]) {
+            if (expanded) await details.locator('summary').first().click();
+            const r = await reachable();
+            assert.ok(r.exposed, JSON.stringify(r));
+            if (r.fixed) { assert.ok(r.bottom <= r.top, JSON.stringify(r)); assert.ok(r.reserve >= r.need, JSON.stringify(r)); }
+          }
+          await tab('today');
+          assert.equal(await page.locator('#main').evaluate(e => e.style.getPropertyValue('--study-grade-clearance')), '');
+          await tab('study');
           await page.locator('[data-g="1"]').click(); await pause(400);
           assert.equal(await page.evaluate(() => window.__QA.snapshot().reviews.length), 1);
           // This interaction consumes the one-card learning fixture. Leave later tests a fresh fixture.
