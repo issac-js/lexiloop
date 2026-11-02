@@ -149,7 +149,7 @@ a { color: var(--brand); }
   margin: 0 auto;
   /* 左右安全区管横屏刘海；顶部安全区管刘海屏竖屏（--safe-t 之前定义了却没用上）*/
   padding: calc(16px + var(--safe-t)) calc(16px + env(safe-area-inset-right, 0px))
-    calc(84px + var(--safe-b)) calc(16px + env(safe-area-inset-left, 0px));
+    max(calc(84px + var(--safe-b)), var(--study-grade-clearance, 0px)) calc(16px + env(safe-area-inset-left, 0px));
 }
 
 .tabbar {
@@ -698,7 +698,6 @@ textarea.input { resize: vertical; min-height: 120px; line-height: 1.6; }
 .study-details[open] > summary { margin-bottom: 12px; }
 .study-grade-bar { background: var(--surface); }
 @media (max-width: 759px) {
-  .study-revealed { padding-bottom: 150px; }
   .study-grade-bar { position: fixed; left: 0; right: 0; bottom: calc(64px + var(--safe-b)); z-index: 35;
     padding: 8px max(12px, env(safe-area-inset-right)) 4px max(12px, env(safe-area-inset-left));
     border-top: 1px solid var(--line); box-shadow: 0 -4px 16px #0000000a; }

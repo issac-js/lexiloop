@@ -5,12 +5,12 @@
  * `from './xxx.js?v=N'` 的 N 加一**（含 index.html 里的 app.js），
  * 否则用户会拿到旧模块、出现「新代码调用旧导出」这类诡异报错。
  */
-import * as S from './store.js?v=122'
-import * as V from './views.js?v=122'
-import * as AUTH from './cloud.js?v=122'
-import * as FSRS from './fsrs.js?v=122'
-import * as GAME from './game.js?v=122'
-import { $, $$, esc, icon, LOGO_SVG, toast, fail, ok, applyTheme, getTheme } from './ui.js?v=122'
+import * as S from './store.js?v=123'
+import * as V from './views.js?v=123'
+import * as AUTH from './cloud.js?v=123'
+import * as FSRS from './fsrs.js?v=123'
+import * as GAME from './game.js?v=123'
+import { $, $$, esc, icon, LOGO_SVG, toast, fail, ok, applyTheme, getTheme } from './ui.js?v=123'
 
 const TABS = [
   { k: 'today', label: '今日', icon: 'today' },
@@ -34,7 +34,34 @@ const isLocal =
 
 /* ─────────────────────────── 渲染 ─────────────────────────── */
 
+let clearStudySpace = () => {}
+
+// Fixed controls must reserve space in #main, even when the card is shorter than the viewport.
+function reserveStudySpace(main) {
+  const bar = main.querySelector('.study-grade-bar')
+  if (!bar) return () => {}
+  const update = () => {
+    const fixed = bar.isConnected && getComputedStyle(bar).position === 'fixed'
+    const clearance = fixed ? Math.ceil(innerHeight - bar.getBoundingClientRect().top + 16) : 0
+    main.style.setProperty('--study-grade-clearance', clearance + 'px')
+  }
+  const observer = new ResizeObserver(update)
+  observer.observe(bar)
+  const keyboard = new MutationObserver(update)
+  keyboard.observe(document.body, { attributes: true, attributeFilter: ['class'] })
+  window.addEventListener('resize', update)
+  window.visualViewport?.addEventListener('resize', update)
+  update()
+  return () => {
+    observer.disconnect(); keyboard.disconnect()
+    window.removeEventListener('resize', update)
+    window.visualViewport?.removeEventListener('resize', update)
+    main.style.removeProperty('--study-grade-clearance')
+  }
+}
+
 function renderAuth() {
+  clearStudySpace()
   $('#root').innerHTML =
     (isLocal
       ? '<div class="auth" style="padding-bottom:0;"><div class="card tight" style="background:var(--warn-soft);border-color:transparent;">' +
@@ -89,6 +116,7 @@ async function resync(btn) {
 }
 
 function renderMain() {
+  clearStudySpace()
   const main = $('#main')
   if (!main) return
   if (current === 'today') main.innerHTML = V.renderToday()
@@ -115,6 +143,7 @@ function renderMain() {
 }
 
 function bindMain() {
+  clearStudySpace = reserveStudySpace($('#main'))
   const cb = viewCallback()
   V.bindJobBanner(cb)
   if (current === 'today') V.bindToday(go)
