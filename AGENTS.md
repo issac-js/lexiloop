@@ -16,3 +16,8 @@
 - Preserve the current WorkBuddy application, URL, users, and database. Schema docs are
   descriptive; do not infer or execute production migrations from them.
 - Use branches and PRs. Follow docs/DEPLOYMENT.md for deployment and rollback.
+
+## Learning product design
+
+- For learning, practice, feedback and progression changes, follow [the learning design standard](docs/LEARNING-DESIGN.md).
+- Identify the learning stage addressed and provide concrete acceptance evidence. Keep implemented, verified, unverified and planned capabilities separate; a design document is not a shipped feature.
