@@ -91,6 +91,8 @@ async function main() {
           await details.locator('summary').first().click();
           await page.locator('[data-g="1"]').click(); await pause(400);
           assert.equal(await page.evaluate(() => window.__QA.snapshot().reviews.length), 1);
+          // This interaction consumes the one-card learning fixture. Leave later tests a fresh fixture.
+          await page.evaluate(() => localStorage.removeItem('__lexiloop_fixture_learning'));
         });
         await check('six-page layout, controls and screenshots', async () => {
           await open();
