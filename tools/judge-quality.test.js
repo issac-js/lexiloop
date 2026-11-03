@@ -71,3 +71,17 @@ test('article-only differences stay context-dependent and cannot be cached as co
  assert.equal(J.cachedVerdict(o.expected,o.given,o),null);
  assert.equal((await J.reviewSemantics({...o,chat:async()=>'{"verdict":"alt"}'})).verdict,'alt');
 }));
+
+
+test('reviewed cloze alternatives work offline in their original sentences only',()=>fixture(J=>{
+ const rows=[
+  ['resolve','work through','She managed to ________ the technical problem.'],
+  ['shut down','shutter','The owner was forced to ________ his business after the lease expired.'],
+ ];
+ for(const [given,expected,sentence] of rows){
+  assert.equal(J.judgeTyped(given,expected,{sentence}).verdict,'alt');
+  assert.equal(J.judgeTyped(given,expected).verdict,'unsure');
+  assert.equal(J.judgeTyped(given,expected,{sentence,locked:true}).verdict,'unsure');
+  assert.equal(J.judgeTyped('not '+given,expected,{sentence}).verdict,'unsure');
+ }
+}));
