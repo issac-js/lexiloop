@@ -97,6 +97,12 @@ export const UNSURE = 'unsure'
  *        locked: 本题明确要求用目标表达（题面已写明），此时未命中就是未命中，走复核
  * @returns {{ok:boolean, verdict:string, typo:boolean, loose:boolean, empty:boolean, target:boolean}}
  */
+// Reviewed alternatives are tied to the complete exercise sentence.
+const reviewedClozeAlternatives = [
+  ['She managed to ________ the technical problem.', 'work through', 'resolve'],
+  ['The owner was forced to ________ his business after the lease expired.', 'shutter', 'shut down'],
+]
+
 export function judgeTyped(given, expected, opts) {
   const o = opts || {}
   const g = normalizeAns(given), e = normalizeAns(expected)
@@ -118,6 +124,9 @@ export function judgeTyped(given, expected, opts) {
     const accepted = normalizeAns(answer)
     if (accepted && (g === accepted || equivalent(g, accepted))) return result(ALT)
   }
+  if (!o.locked && !o.spelling && o.sentence && reviewedClozeAlternatives.some(
+    ([sentence, target, answer]) => sentence === o.sentence.trim() && target === e && answer === g
+  )) return result(ALT)
   // Inflections, close spellings, added words and alternative expressions are not proof
   // of correctness. A contextual review can resolve them; an outage must not mark them wrong.
   return result(!o.spelling && looksLikeEnglishPhrase(given) ? UNSURE : WRONG)
