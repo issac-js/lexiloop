@@ -2,25 +2,25 @@
  * views.js — 全部页面
  * 每个页面导出 render()（返回 HTML）与 bind()（挂载事件），由 app.js 调度。
  */
-import * as S from './store.js?v=126'
-import * as FSRS from './fsrs.js?v=126'
-import { CARD_TYPES, ENRICH_CONCURRENCY, RECOMMENDED_SETTINGS } from './config.js?v=126'
+import * as S from './store.js?v=127'
+import * as FSRS from './fsrs.js?v=127'
+import { CARD_TYPES, ENRICH_CONCURRENCY, RECOMMENDED_SETTINGS } from './config.js?v=127'
 import {
   esc, $, $$, toast, fail, ok, openModal, closeModal, confirmDialog,
   icon, LOGO_SVG, speak, fmtDateCN, relTime, STRENGTH_ZH, REGISTER_ZH,
   listEnVoices, getVoicePref, setVoicePref, getTheme, applyTheme,
-} from './ui.js?v=126'
-import * as AUTH from './cloud.js?v=126'
-import * as ENRICH from './enrich.js?v=126'
-import * as EXP from './exporter.js?v=126'
-import { createReviewRunner, parseReviewReport, auditEntry, REVIEW_TIMEOUT_MS } from './content-review.js?v=126'
-export { REVIEW_TIMEOUT_MS } from './content-review.js?v=126'
-import { parseImport, skippedLines, DEFAULT_MAX_WORDS } from './importer.js?v=126'
+} from './ui.js?v=127'
+import * as AUTH from './cloud.js?v=127'
+import * as ENRICH from './enrich.js?v=127'
+import * as EXP from './exporter.js?v=127'
+import { createReviewRunner, parseReviewReport, auditEntry, REVIEW_TIMEOUT_MS } from './content-review.js?v=127'
+export { REVIEW_TIMEOUT_MS } from './content-review.js?v=127'
+import { parseImport, skippedLines, DEFAULT_MAX_WORDS } from './importer.js?v=127'
 
 import {
   judgeTyped, reviewSemantics, looksLikeEnglishPhrase, cachedVerdict, inflectionFeedback, articleDifference,
   HIT, ALT, WRONG, UNSURE,
-} from './judge.js?v=126'
+} from './judge.js?v=127'
 
 /* ═════════════════════════ 通用片段 ═════════════════════════ */
 
@@ -1069,7 +1069,7 @@ export function sessionProgress() {
 export {
   normalizeAns, judgeTyped, looksLikeEnglishPhrase, reviewSemantics, cachedVerdict,
   clearJudgeCache, HIT, ALT, WRONG, UNSURE,
-} from './judge.js?v=126'
+} from './judge.js?v=127'
 
 const REG_ZH = { formal: '正式', neutral: '中性', spoken: '口语', informal: '非正式' }
 

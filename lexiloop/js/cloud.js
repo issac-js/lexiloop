@@ -4,7 +4,7 @@
  * 统一收口三件事：初始化 SDK、邮箱认证、数据库读写、模型调用。
  * 其他模块一律通过本文件访问云端，不得自行 fetch '/.cloud/**'，也不得引入第二个客户端。
  */
-import { CLOUD_CONFIG } from './config.js?v=126'
+import { CLOUD_CONFIG } from './config.js?v=127'
 
 let cloud = null
 
@@ -286,20 +286,11 @@ export async function testCustomApi(cfg) {
 
 let cachedModel = null
 
-/**
- * 用户没显式指定模型时的挑选顺序。
- * 实测（同一提示词、同一个词）：
- *   deepseek-v4.1-flash  4.0s   662 输出 token，5 条搭配  ← 最快，但**容易被限流**
- *   hunyuan-chat        20.6s   610 输出 token，5 条搭配
- *   hy3 / glm-5.3-flash 11-13s  1400 token 全是推理，正文为空 → 直接失败
- * 2026-09-27 实测：一批 265 个词打过去之后，deepseek-v4.1-flash 单独被限流，
- * 而 deepseek-v4-flash / v4-pro / hunyuan-chat / hy3 / glm-5.3 全部正常。
- * 所以默认选**稳定**的 v4-flash（与 v4.1 同族），把 v4.1 放在备选位。
- */
+/** 用户选择“自动”时，优先使用云端可用的 DeepSeek V4.1 Flash。 */
 export const PREFERRED_MODELS = [
+  'deepseek-v4.1-flash',
   'deepseek-v4-flash',
   'hunyuan-chat',
-  'deepseek-v4.1-flash',
   'deepseek-v4-pro',
 ]
 
