@@ -50,6 +50,7 @@
       range(a, b) { data.ranges.push({ table, from: a, to: b }); from = a; end = b; return q; },
       in(field, values) { filters.push((row) => values.includes(row[field])); return q; },
       eq(field, value) { filters.push((row) => row[field] === value); return q; },
+      lt(field, value) { filters.push(row => row[field] < value); return q; },
       gte(field, value) { filters.push((row) => row[field] >= value); return q; },
       upsert(row) { write = row; writeMode = 'upsert'; return q; },
       update(row) { write = row; writeMode = 'update'; return q; },
@@ -91,7 +92,7 @@
       let stat = data.stats.find((r) => r.reviewed_on === today());
       if (!stat) { stat = { reviewed_on: today(), total: 0, correct: 0, new_words: 0, minutes: 0 }; data.stats.push(stat); }
       stat.total++; stat.correct += args.p_grade >= 3 ? 1 : 0; stat.new_words += wasNew ? 1 : 0;
-      data.reviews.push({ card_id: card.id, word_id: card.word_id, grade: args.p_grade, created_at: new Date().toISOString(),
+      data.reviews.push({ id: data.reviews.length + 1, elapsed_ms: args.p_elapsed_ms, verdict: args.p_verdict, hinted: args.p_hinted, assisted: args.p_assisted, is_test: false, card_id: card.id, word_id: card.word_id, grade: args.p_grade, created_at: new Date().toISOString(),
         prev_state: clone(args.p_prev_state), next_state: clone(args.p_next_state), source: args.p_source });
     }
     save(); return { data: { ok: true, scheduler_applied: !args.p_is_test }, error: null };

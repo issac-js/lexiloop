@@ -2,25 +2,25 @@
  * views.js — 全部页面
  * 每个页面导出 render()（返回 HTML）与 bind()（挂载事件），由 app.js 调度。
  */
-import * as S from './store.js?v=127'
-import * as FSRS from './fsrs.js?v=127'
-import { CARD_TYPES, ENRICH_CONCURRENCY, RECOMMENDED_SETTINGS } from './config.js?v=127'
+import * as S from './store.js?v=128'
+import * as FSRS from './fsrs.js?v=128'
+import { CARD_TYPES, ENRICH_CONCURRENCY, RECOMMENDED_SETTINGS } from './config.js?v=128'
 import {
   esc, $, $$, toast, fail, ok, openModal, closeModal, confirmDialog,
   icon, LOGO_SVG, speak, fmtDateCN, relTime, STRENGTH_ZH, REGISTER_ZH,
   listEnVoices, getVoicePref, setVoicePref, getTheme, applyTheme,
-} from './ui.js?v=127'
-import * as AUTH from './cloud.js?v=127'
-import * as ENRICH from './enrich.js?v=127'
-import * as EXP from './exporter.js?v=127'
-import { createReviewRunner, parseReviewReport, auditEntry, REVIEW_TIMEOUT_MS } from './content-review.js?v=127'
-export { REVIEW_TIMEOUT_MS } from './content-review.js?v=127'
-import { parseImport, skippedLines, DEFAULT_MAX_WORDS } from './importer.js?v=127'
+} from './ui.js?v=128'
+import * as AUTH from './cloud.js?v=128'
+import * as ENRICH from './enrich.js?v=128'
+import * as EXP from './exporter.js?v=128'
+import { createReviewRunner, parseReviewReport, auditEntry, REVIEW_TIMEOUT_MS } from './content-review.js?v=128'
+export { REVIEW_TIMEOUT_MS } from './content-review.js?v=128'
+import { parseImport, skippedLines, DEFAULT_MAX_WORDS } from './importer.js?v=128'
 
 import {
   judgeTyped, reviewSemantics, looksLikeEnglishPhrase, cachedVerdict, inflectionFeedback, articleDifference,
   HIT, ALT, WRONG, UNSURE,
-} from './judge.js?v=127'
+} from './judge.js?v=128'
 
 /* ═════════════════════════ 通用片段 ═════════════════════════ */
 
@@ -1026,6 +1026,8 @@ export function resetSession(mode) {
   session.shown = false
   session.startedAt = Date.now()
   session.cardShownAt = Date.now()
+  session.responseStartedAt = Date.now()
+  session.responseEndedAt = null
   session.eventId = S.newEventId()   // 本次作答的服务端幂等键
   session.total = session.queue.length
   session.answered = null
@@ -1037,9 +1039,14 @@ export function resetSession(mode) {
   session.byGrade = { 1: 0, 2: 0, 3: 0, 4: 0 }
 }
 
-/** 本轮学习是否已经开始作答。
- *  数据层同步完成时要据此决定能不能重绘：没开始答题随便重绘，
- *  已经开始答题了就不能冲掉当前题目状态。 */
+/** Freeze the first answer/reveal time across feedback rerenders. */
+function revealStudyAnswer() {
+  if (session.responseEndedAt == null) session.responseEndedAt = Date.now()
+  session.shown = true
+  session.cardShownAt = Date.now()
+}
+
+/** 本轮学习是否已经开始作答。同步重绘据此保护当前学习进度。 */
 export function studyInProgress() {
   return (session.attempts || 0) > 0
 }
@@ -1069,7 +1076,7 @@ export function sessionProgress() {
 export {
   normalizeAns, judgeTyped, looksLikeEnglishPhrase, reviewSemantics, cachedVerdict,
   clearJudgeCache, HIT, ALT, WRONG, UNSURE,
-} from './judge.js?v=127'
+} from './judge.js?v=128'
 
 const REG_ZH = { formal: '正式', neutral: '中性', spoken: '口语', informal: '非正式' }
 
@@ -1611,16 +1618,14 @@ export function bindStudy(go, onChanged) {
   if (reveal) reveal.onclick = () => {
     // 没尝试作答就揭晓 = 硬提示：这次不算成功提取，按忘了处理
     session.hinted = 'hard'
-    session.shown = true
-    session.cardShownAt = Date.now()
+    revealStudyAnswer()
     onChanged()
   }
   const recallCheck = $('#ans-check')
   if (recallCheck) recallCheck.onclick = () => {
     // 已听过答案仍算硬提示，不能通过核对按钮抹掉。
     if (session.hinted !== 'hard') session.hinted = 'soft'
-    session.shown = true
-    session.cardShownAt = Date.now()
+    revealStudyAnswer()
     onChanged()
   }
 
@@ -1636,8 +1641,7 @@ export function bindStudy(go, onChanged) {
       empty: r.empty, given: given, expected: it.expected, kind: it.kind, sentence: it.sentence || '',
       pos: it.pos || [],
     }
-    session.shown = true
-    session.cardShownAt = Date.now()
+    revealStudyAnswer()
     onChanged()
     reviewIfNeeded()
   }
@@ -1726,8 +1730,7 @@ export function bindStudy(go, onChanged) {
     if (rv) rv.onclick = () => {
       session.hinted = session.answered ? 'soft' : 'hard'
       session.answered = null
-      session.shown = true
-      session.cardShownAt = Date.now()
+      revealStudyAnswer()
       onChanged()
     }
     $$('.choice').forEach((btn) => {
@@ -1742,8 +1745,7 @@ export function bindStudy(go, onChanged) {
           assist: assist, given: opt.text, expected: it0.expected, kind: it0.kind,
         }
         if (assist) session.hinted = 'soft'   // 用辅助 = 软提示，评分会被封顶
-        session.shown = true
-        session.cardShownAt = Date.now()
+        revealStudyAnswer()
         onChanged()
       }
     })
@@ -1832,8 +1834,21 @@ export function bindStudy(go, onChanged) {
       if (session.hinted) session.hintedCount = (session.hintedCount || 0) + 1
       // 判分维度跟着日志一起落库，否则"待复核有多少""多少分靠提示拿到"永远算不出来
       const ans = session.answered
+      const gradedAt = Date.now()
+      const startedAt = session.responseStartedAt
+      const answeredAt = session.responseEndedAt
+      const validTiming = Number.isFinite(startedAt) && Number.isFinite(answeredAt) &&
+        startedAt <= answeredAt && answeredAt <= gradedAt
+      const observation = {
+        version: 1,
+        card_type: card.card_type || 'recognition',
+        response_ms: validTiming ? answeredAt - startedAt : null,
+        feedback_ms: validTiming ? gradedAt - answeredAt : null,
+        total_ms: validTiming ? gradedAt - startedAt : null,
+      }
       const log = Object.assign({}, res.log, {
-        elapsed_ms: Date.now() - (session.cardShownAt || Date.now()),
+        prev_state: { ...res.log.prev_state, learning_observation: observation },
+        elapsed_ms: observation.total_ms,
         verdict: (ans && ans.verdict) || null,
         hinted: !!session.hinted,
         assisted: !!(ans && (ans.assist || ans.choiceMode)),
@@ -1901,6 +1916,8 @@ export function bindStudy(go, onChanged) {
       }
       session.shown = false
       session.cardShownAt = Date.now()
+      session.responseStartedAt = Date.now()
+      session.responseEndedAt = null
       // 换了一张卡 = 一次全新的作答：必须换事件 ID，
       // 否则上一张卡的 eventId 会在这里被复用，服务端会把新作答当成重放而丢弃
       session.eventId = S.newEventId()
@@ -2955,7 +2972,7 @@ function memoryMetricsCard() {
     metric('一次通过率', m.firstPassRate == null ? '—' : m.firstPassRate + '%') +
     metric('总体通过率', m.passRate + '%') +
     metric('预测保持率', m.predicted == null ? '—' : m.predicted + '%') +
-    metric('平均反应', m.avgMs ? (m.avgMs / 1000).toFixed(1) + 's' : '—') +
+    metric('平均记录用时', m.avgMs ? (m.avgMs / 1000).toFixed(1) + 's' : '—') +
     '</div>' +
     '<div class="row between" style="margin:10px 0 6px;">' +
     '<span class="tiny">成熟卡 ' + h.maturePct + '%　｜　复习债 ' + h.due + ' 张　｜　已开始 ' + h.startedPct +
@@ -3723,10 +3740,10 @@ export function bindMe(onChanged, go, onSignOut) {
     rv.disabled = true
     rv.textContent = '拉取中…'
     try {
-      const rows = await S.fetchReviews(2000)
+      const rows = await S.fetchReviews(20000)
       if (!rows.length) return fail('还没有复习记录')
       EXP.downloadText(EXP.buildReviewsCsv(rows), EXP.stampName('学习记录', 'csv'), 'text/csv')
-      ok('已导出 ' + rows.length + ' 条复习记录')
+      ok('已导出最近 ' + rows.length + ' 条复习记录' + (rows.length === 20000 ? '（达到本次上限）' : ''))
     } catch (e) {
       fail('导出失败：' + ((e && e.message) || ''))
     } finally {
