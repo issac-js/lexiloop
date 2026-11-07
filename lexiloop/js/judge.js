@@ -23,9 +23,10 @@
 
 /* v3：词形变体改用"代入式语法判断"专用提示词 —— 旧问法实测会波动
    （同一用例 8 次采样 7 次对、1 次错），旧缓存里的结论不能重放。 */
-const LS_CACHE = 'lexiloop.judgecache.v6'
+const LS_CACHE = 'lexiloop.judgecache.v7'
 const CACHE_MAX = 400
-const SEMANTIC_TIMEOUT_MS = 6000
+export const SEMANTIC_TIMEOUT_MS = 12000
+export const SEMANTIC_MAX_TOKENS = 512
 
 /* ─────────────────────────── 归一化 ─────────────────────────── */
 
@@ -193,7 +194,7 @@ export function articleDifference(expected, given) {
 
 const SYS_PROMPT =
   '先区分明确错误与可接受但不够自然的表达；仅不常见、风格或冠词可选差异不能直接判错。\n' +
-  '你是英语判分助手。用户在做"用指定搭配完成句子"的填空练习。\n' +
+  '你是英语判分助手。用户在做按句意填空的练习，允许合理的同义表达。\n' +
   '判断用户填写的表达**在这个句子的语境里**是否是成立的英语。\n' +
   '只输出 JSON，不要解释：{"verdict":"alt"或"wrong"或"unsure"}\n' +
   'alt = 语法正确、意思贴切、母语者会这么说（即使和目标搭配不同）\n' +
@@ -330,55 +331,50 @@ function formReviewPrompt(o) {
  *        chat: 注入的 LLM 调用函数 ({system,user,json,temperature,maxTokens,signal}) => Promise<string>
  * @returns {Promise<{verdict:'alt'|'wrong'|null, cached:boolean}>}
  */
-export async function reviewSemantics(o) {
-  if (!o || !o.chat || !o.expected || !o.given) return { verdict: null, cached: false }
+// Failure reasons contain fixed codes only, never raw gateway errors or user answers.
+export function reviewStatusText(reason) {
+  return ({ timeout: '核对服务响应较慢，暂时没有结论', unavailable: '核对服务暂时不可用',
+    empty: '核对服务未返回答案', truncated: '核对回复未完成', invalid: '核对回复格式异常',
+    ambiguous: '当前语境还不足以可靠判断', context: '这道题缺少判定所需的语境',
+    article: '这处冠词需要结合语境判断' })[reason] || '这道题暂时无法可靠判定'
+}
 
+export async function reviewSemantics(o) {
+  const unresolved = reason => ({ verdict: null, cached: false, reason })
+  if (!o || !o.chat || !o.expected || !o.given) return unresolved('context')
   const key = cacheKey(o.expected, o.given, o)
   const hit = cachedVerdict(o.expected, o.given, o)
-  if (hit) return { verdict: hit, cached: true }
-  if (!o.sentence && !o.zh) return { verdict: null, cached: false }
-
-  const formMode = useFormMode(o)
-
+  if (hit) return { verdict: hit, cached: true, reason: 'cached' }
+  if (!o.sentence && !o.zh) return unresolved('context')
   const controller = new AbortController()
   let timer = null
-  const guard = new Promise((resolve) => {
-    timer = setTimeout(() => { controller.abort(); resolve('__timeout__') }, SEMANTIC_TIMEOUT_MS)
+  const timeout = Symbol('timeout')
+  const guard = new Promise(resolve => {
+    timer = setTimeout(() => { resolve(timeout); controller.abort() }, SEMANTIC_TIMEOUT_MS)
   })
-
   try {
     const raw = await Promise.race([
-      o.chat({
-        system: formMode ? SYS_FORM_PROMPT : SYS_PROMPT,
-        user: formMode ? formReviewPrompt(o) : reviewPrompt(o),
-        json: true,
-        temperature: 0,
-        maxTokens: 60,
-        model: o.model,
-        signal: controller.signal,
-      }),
-      guard,
+      o.chat({ system: useFormMode(o) ? SYS_FORM_PROMPT : SYS_PROMPT,
+        user: useFormMode(o) ? formReviewPrompt(o) : reviewPrompt(o),
+        json: true, temperature: 0, maxTokens: SEMANTIC_MAX_TOKENS,
+        model: o.model, signal: controller.signal }), guard,
     ])
-    if (timer) clearTimeout(timer)
-    if (typeof raw !== 'string' || !raw) return { verdict: null, cached: false }
-
-    let v = ''
+    if (raw === timeout) return unresolved('timeout')
+    if (typeof raw !== 'string' || !raw.trim()) return unresolved('empty')
+    let j
     try {
-      const clean = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '')
-      const j = JSON.parse(clean)
-      v = String((j && j.verdict) || '').toLowerCase()
-    } catch (e) { return { verdict: null, cached: false } }
-    if (v === 'wrong' && articleDifference(o.expected, o.given)) return { verdict: null, cached: false }
-    if (v !== 'alt' && v !== 'wrong') return { verdict: null, cached: false }
-
-    loadCache()[key] = { v: v, t: Date.now() }
+      j = JSON.parse(raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, ''))
+    } catch (e) { return unresolved('invalid') }
+    const v = j && typeof j === 'object' && !Array.isArray(j) ? j.verdict : null
+    if (v === 'unsure') return unresolved('ambiguous')
+    if (v !== ALT && v !== WRONG) return unresolved('invalid')
+    if (v === WRONG && articleDifference(o.expected, o.given)) return unresolved('article')
+    loadCache()[key] = { v, t: Date.now() }
     saveCache()
-    return { verdict: v, cached: false }
+    return { verdict: v, cached: false, reason: 'reviewed' }
   } catch (e) {
-    return { verdict: null, cached: false }
-  } finally {
-    if (timer) clearTimeout(timer)
-  }
+    return unresolved(controller.signal.aborted ? 'timeout' : e && e.code === 'LLM_TRUNCATED' ? 'truncated' : 'unavailable')
+  } finally { if (timer) clearTimeout(timer) }
 }
 
 /** 供测试与"清缓存"用。

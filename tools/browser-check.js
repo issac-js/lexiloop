@@ -221,6 +221,48 @@ async function main() {
           assert.match(await page.locator('#modal-wrap').innerText(), /安排后续预约（合成核对）/);
           await layout();
         });
+        await check('study service failure offers retry and accepts a semantic alternative without a duplicate review', async () => {
+          await open('semantic');
+          await page.evaluate(() => { window.__reviewMock.mode = 'invalid'; });
+          await tab('today'); await page.locator('#start-study').click();
+          await page.locator('#ans-in').fill('arrange a follow-up visit'); await page.locator('#ans-go').click();
+          await page.locator('#ans-review-retry').waitFor();
+          assert.match(await page.locator('.verdict').innerText(), /回复格式异常/);
+          assert.equal(await page.evaluate(() => window.__QA.snapshot().reviews.length),0);
+          await page.evaluate(() => { window.__reviewMock.mode = 'semantic-alt'; });
+          await page.locator('#ans-review-retry').click();
+          await page.getByText(/你的表达也对/).waitFor();
+          assert.equal(await page.evaluate(() => window.__reviewMock.calls),2);
+          await page.locator('[data-g="3"]').click(); await pause(400);
+          const rows = await page.evaluate(() => window.__QA.snapshot().reviews);
+          assert.equal(rows.length,1); assert.equal(rows[0].verdict,'alt');
+          assert.equal(rows[0].prev_state.learning_observation.review_reason,'reviewed');
+          await layout();
+        });
+        await check('transfer pilot completes through practice hub; hints and alternatives do not mutate learning', async () => {
+          await open(); await tab('games');
+          const before = await page.evaluate(() => window.__QA.snapshot());
+          await page.locator('#g-transfer').click();
+          const targets = await page.evaluate(async v => {
+            const T = await import('./js/transfer.js?v=' + v); return T.transferPlan().map(g => ({target:g.target,alt:g.accept[0]}));
+          }, VERSION);
+          await page.locator('#transfer-answer').fill(targets[0].alt);
+          await page.locator('#transfer-check').click();
+          assert.match(await page.locator('.verdict').innerText(), /你的表达也成立/);
+          await page.locator('#transfer-next').click();
+          await page.locator('#transfer-hint').click();
+          await page.locator('#transfer-answer').fill(targets[1].target);
+          await page.locator('#transfer-check').click(); await page.locator('#transfer-next').click();
+          await page.locator('#transfer-reveal').click();
+          await page.locator('#transfer-next').click();
+          await page.getByText('本轮练习完成', {exact:true}).waitFor();
+          const after = await page.evaluate(() => window.__QA.snapshot());
+          assert.deepEqual(after, before);
+          const rows = await page.evaluate(() => Object.keys(localStorage).filter(k=>k.startsWith('lexiloop.transfer.v1.')).map(k=>JSON.parse(localStorage.getItem(k))));
+          assert.equal(rows.length,1);assert.equal(rows[0].length,1);
+          assert.deepEqual(rows[0][0].results.map(r=>r.hinted),[false,true,true]);
+          await layout(); await page.locator('#transfer-home').click(); await page.locator('#g-transfer').waitFor();
+        });
         if (variant.full) {
           await check('daily focus runs end-to-end without changing FSRS or daily reviews', async () => {
             await open(); await tab('games');

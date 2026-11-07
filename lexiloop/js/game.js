@@ -4,17 +4,18 @@
  * 因此游戏本身不计分；结束时给一个**可选**的"把这次表现记进复习计划"，
  * 由用户自己决定是否写入调度（避免游戏手感污染记忆曲线）。
  */
-import * as S from './store.js?v=128'
-import * as CLOUD from './cloud.js?v=128'
-import { $, $$, esc, icon, toast, fail, ok, speak, openModal, closeModal, confirmDialog } from './ui.js?v=128'
+import * as S from './store.js?v=129'
+import * as CLOUD from './cloud.js?v=129'
+import { $, $$, esc, icon, toast, fail, ok, speak, openModal, closeModal, confirmDialog } from './ui.js?v=129'
 import {
   normalizeAns, judgeTyped, buildChoices, whyNote, whyBlockHTML, verdictHTML,
   reviewSemantics, looksLikeEnglishPhrase, cachedVerdict,
   dataStateCard,
   HIT, ALT, WRONG, UNSURE,
-} from './views.js?v=128'
-import * as LABS from './labs.js?v=128'
-import * as FOCUS from './focus.js?v=128'
+} from './views.js?v=129'
+import * as LABS from './labs.js?v=129'
+import * as FOCUS from './focus.js?v=129'
+import * as TRANSFER from './transfer.js?v=129'
 
 const G = { mode: null, match: null, dict: null, quiz: null, chat: null, timer: null, story: null, size: 0 }
 
@@ -23,6 +24,7 @@ const G = { mode: null, match: null, dict: null, quiz: null, chat: null, timer: 
  *  否则用户进了某个模式后想回首页，只能靠页面里碰巧存在的返回按钮。 */
 export function exitMode() {
   FOCUS.resetFocus()
+  TRANSFER.resetTransfer()
   if (G.timer) { clearInterval(G.timer); G.timer = null }
   G.mode = null
   G.match = null
@@ -872,7 +874,7 @@ function bindDict(cb) {
       // 本地只能比字符串：address 是不是 deal with 的合理替代，得问一次语义复核。
       // 复核期间先不判错（详见 views.js 里同样的说明）。
       if ([WRONG, UNSURE].includes(r.verdict) && !meta.spell && looksLikeEnglishPhrase(given)) {
-        // 复核要 6 秒，用户可能已经点「下一个」走了。用题号认领回自己那一题：
+        // 复核有时间上限，用户可能已经点「下一个」走了。用题号认领回自己那一题：
         // 对不上就只当缓存已写（verdict 已经在 judge 层落盘），不动当前界面。
         const qi = d.i
         const owner = d.answered
@@ -889,6 +891,7 @@ function bindDict(cb) {
             chat: CLOUD.chatText,
             model: S.state.settings.llm_model || undefined,
           }).then((res) => {
+            owner.reviewReason = res.reason
             applyVerbal(res.verdict, qi, owner, q)
             if (d.i === qi) cb()
           })
@@ -1558,6 +1561,7 @@ function bindChatSelect(cb) {
 }
 
 export function renderGames() {
+  if (G.mode === 'transfer') return TRANSFER.renderTransfer()
   if (G.mode === 'focus') return FOCUS.renderFocus()
   if (G.mode === 'match') return renderMatch()
   if (G.mode === 'dict') return renderDict()
@@ -1589,6 +1593,9 @@ export function renderGames() {
     '<div class="tiny">最长 ' + st.best + ' 天　｜　累计 ' + st.total + ' 天　｜　今天' +
     ((S.state.daily || []).some((x) => String(x.reviewed_on).slice(0, 10) === dayKey(new Date()) && Number(x.total) > 0)
       ? '已打卡' : '还没打卡') + '</div></div></div></div>' +
+
+    '<div class="card"><h2>表达联系与新情境</h2><p class="muted">10 组精修表达，联系辨析 → 新句回忆 → 换情境使用。每次 3 题，可替代一次其他练习。</p>' +
+    '<button class="btn primary block" id="g-transfer">开始小批试练</button></div>' +
 
     // 独立于 FSRS 的每日综合训练
     '<div class="card" style="border-color:var(--brand);">' +
@@ -1657,6 +1664,9 @@ export function bindGames(cb, go) {
   $$('[data-size]').forEach((b) => {
     b.onclick = () => { G.size = Number(b.dataset.size) || 0; cb() }
   })
+  const transfer = $('#g-transfer')
+  if (transfer) transfer.onclick = () => { TRANSFER.startTransfer(); G.mode = 'transfer'; cb() }
+  if (G.mode === 'transfer') TRANSFER.bindTransfer(cb, () => { G.mode = null; cb() })
   const focus = $('#g-focus')
   if (focus) focus.onclick = () => launchMode('focus', cb)
   const pick = $('#g-pick')

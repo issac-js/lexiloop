@@ -7,7 +7,7 @@
  *   2. 结构层面：强制 JSON 输出，字段枚举固定
  *   3. 校验层面：本地规则闸门，不通过的一律丢弃（宁可少，不可假）
  */
-import { chatText, pickModelAfter } from './cloud.js?v=128'
+import { chatText, pickModelAfter } from './cloud.js?v=129'
 
 export const PROMPT_VERSION = 'colloc-v2'
 

@@ -61,6 +61,9 @@ def main():
             elif mm.group(1) != cur:
                 stale.append('%s → v%s' % (t, mm.group(1)))
         swt = read(sw)
+        for v in set(re.findall(r'\?v=(\d+)', swt)):
+            if v != cur:
+                stale.append('sw.js SHELL → v%s' % v)
         cache_v = re.search(r"lexiloop-shell-v(\d+)", swt)
         if cache_v and cache_v.group(1) != cur:
             stale.append('sw.js CACHE → v%s' % cache_v.group(1))
@@ -101,6 +104,7 @@ def main():
     swt = read(sw)
     swt2, n1 = re.subn(r"lexiloop-shell-v\d+", 'lexiloop-shell-v' + new, swt)
     swt2, n2 = re.subn(r"'\./styles\.css(\?v=\d+)?'", "'./styles.css?v=" + new + "'", swt2)
+    swt2 = re.sub(r'(\./[A-Za-z0-9_./-]+)\?v=\d+', lambda m: m.group(1) + '?v=' + new, swt2)
     sw.write_text(swt2, encoding='utf-8')
     changed.append('sw.js CACHE(%d) + SHELL(%d)' % (n1, n2))
 

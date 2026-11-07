@@ -23,7 +23,7 @@
         collocations: [{ pattern: term, zh: '安排后续预约', examples: [{ en: 'Please ' + term + ' tomorrow.', zh: '请安排后续预约。' }] }],
       } });
       const isNew = name === 'learning' || (!['large', 'goal-recorded'].includes(name) && i > 6);
-      cards.push({ id: i, word_id: i, card_type: 'recognition', deck: '默认词单', status: isNew ? 'new' : 'review',
+      cards.push({ id: i, word_id: i, card_type: name === 'semantic' && i === 1 ? 'production' : 'recognition', deck: '默认词单', status: isNew ? 'new' : 'review',
         due: new Date(Date.now() - (name === 'overdue' && i === 1 ? 2 * 86400000 : 60000)).toISOString(),
         stability: isNew ? 0 : 5, difficulty: 5, reps: isNew ? 0 : 5, lapses: 0, last_review_at: new Date(Date.now() - 3 * 86400000).toISOString() });
     }
@@ -107,6 +107,7 @@
       if (reviewMock.mode === 'hold') await new Promise((resolve) => reviewMock.releases.push(resolve));
       if (reviewMock.mode === 'error') throw Error('Synthetic model failure');
       const content = reviewMock.mode === 'invalid' ? 'not json' :
+        reviewMock.mode === 'semantic-alt' ? JSON.stringify({verdict:'alt'}) :
         JSON.stringify({ pos_ok: true, severity: 'none', collocations: [{ index: 1, idiomatic: true, issue: '' }], missing_senses: [], suggestions: [] });
       yield { choices: [{ delta: { content } }] };
     },
