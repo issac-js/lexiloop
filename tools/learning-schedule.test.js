@@ -402,7 +402,7 @@ test('review export preserves evidence, paginates a stable snapshot and marks le
     source: 'study', created_at: '2026-11-07T01:00:00.000Z',
     verdict: 'alt', hinted: false, assisted: false, is_test: false,
     prev_state: { status: 'review', stability: 5, last_review_at: 1793926800000,
-      learning_observation: { version: 1, card_type: 'cloze', response_ms: 5000, feedback_ms: 3000, total_ms: 8000 } },
+      learning_observation: { version: 1, review_reason: 'reviewed', card_type: 'cloze', response_ms: 5000, feedback_ms: 3000, total_ms: 8000 } },
   }));
   rows[0].hinted = null; rows[0].assisted = null; rows[0].prev_state = {};
   rows[1].card_id = 999; // Removed card still has a word ID in its historical review.
@@ -435,6 +435,8 @@ test('review export preserves evidence, paginates a stable snapshot and marks le
   assert.equal(exported[0].card_type, 'cloze');
   assert.equal(exported[0].hinted, false);
   assert.equal(exported[0].verdict, 'alt');
+  assert.equal(exported[0].review_reason, 'reviewed');
+  assert.equal(exported.at(-1).review_reason, '');
   assert.equal(exported.at(-1).hinted, null);
   assert.equal(exported.at(-1).timing_schema, 'legacy_or_other');
   assert.equal(exported.at(-1).response_ms, null);
@@ -443,6 +445,8 @@ test('review export preserves evidence, paginates a stable snapshot and marks le
   const csv = E.buildReviewsCsv([exported[0], { ...exported.at(-1), word: 'say "hello",\nplease' }]);
   assert.match(csv.split('\n')[0], /created_at_iso,id,card_id,word_id,source,verdict,hinted,assisted/);
   assert.match(csv, /"2026-11-07T01:00:00.000Z"/);
+  assert.match(csv.split('\n')[0], /previous_stability,review_reason$/);
+  assert.match(csv.split('\n')[1], /,"reviewed"$/);
   assert.match(csv, /"alt","false","false","study_wall_v1","5000","3000"/);
   assert.ok(csv.includes('"say ""hello"",\nplease"'));
 }));
@@ -454,4 +458,20 @@ test('review export discards data if the account changes during a page request',
     return query;
   };
   await assert.rejects(S.fetchReviews(10), /账号已切换/);
+}));
+
+test('production review receives the Chinese meaning shown in the actual study question', () => withApp(async ({ S, V, card, seed, load, requests }) => {
+  seed([{ ...card(1), card_type: 'production' }]);
+  S.state.words[0].lemma = 'handle'; S.state.words[0].payload.senses[0].def_zh = '处理问题';
+  const C = await load('cloud.js'); let sent;
+  C.getCloud().llm = {models:{list:async()=>[{id:'deepseek-v4.1-flash'}]},chat:{completions:{create:async function* (params) {
+    sent = params; yield {choices:[{delta:{content:'{"verdict":"alt"}'},finish_reason:'stop'}]};
+  }}}};
+  const go = {}, input = {value:'address',focus(){}};
+  globalThis.document = {querySelector:selector=>selector==='#ans-go'?go:selector==='#ans-in'?input:null,querySelectorAll:()=>[]};
+  V.resetSession(); assert.match(V.renderStudy(), /处理问题/); V.bindStudy(()=>{},()=>{});go.onclick();
+  await new Promise(resolve=>setTimeout(resolve,30));
+  assert.ok(sent, 'Semantic review was silently skipped'); assert.match(sent.messages[1].content,/处理问题/);
+  assert.match(V.renderStudy(), /你的表达也对/);
+  assert.equal(requests.filter(r=>r.name==='record_review').length,0);
 }));

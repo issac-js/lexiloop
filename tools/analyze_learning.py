@@ -31,6 +31,8 @@ def timestamp(value):
     numeric = number(value)
     try:
         if numeric is not None:
+            if numeric <= 0:
+                return None
             return datetime.fromtimestamp(numeric / 1000, timezone.utc)
         dt = datetime.fromisoformat(str(value).replace('Z', '+00:00'))
         return dt if dt.tzinfo is not None and dt.utcoffset() is not None else None

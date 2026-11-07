@@ -149,6 +149,7 @@ export function bindTransfer(cb, back) {
   const hint = $('#transfer-hint'); if (hint) hint.onclick = () => { s.hint = true; cb() }
   const reveal = $('#transfer-reveal'); if (reveal) reveal.onclick = () => { s.hint = true; s.result = 'revealed'; cb() }
   const next = $('#transfer-next'); if (next) next.onclick = () => {
+    if (!s.result || s.done || s.owner !== (S.state.user && S.state.user.id)) return
     s.results.push({ group:s.plan[s.index].id, verdict:s.result, hinted:s.hint })
     s.index++; s.given = ''; s.hint = false; s.result = null
     if (s.index === s.plan.length) {

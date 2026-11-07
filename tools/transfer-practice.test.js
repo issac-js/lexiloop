@@ -31,7 +31,7 @@ test('first attempt, revealed and hinted results stay distinct; finish saves agg
  const click=id=>{nodes[id].onclick();};
  for(const id of ['#transfer-home','#transfer-answer','#transfer-check','#transfer-hint','#transfer-reveal','#transfer-next'])nodes[id]={value:''};
  const cb=()=>{};T.bindTransfer(cb,cb);
- nodes['#transfer-answer'].value=T.transferPlan()[0].target;nodes['#transfer-answer'].oninput();click('#transfer-check');click('#transfer-next');
+ nodes['#transfer-answer'].value=T.transferPlan()[0].target;nodes['#transfer-answer'].oninput();click('#transfer-check');click('#transfer-next');click('#transfer-next'); // Stale duplicate click cannot skip the next exercise.
  T.bindTransfer(cb,cb);click('#transfer-hint');nodes['#transfer-answer'].value=T.transferPlan()[1].accept[0];nodes['#transfer-answer'].oninput();click('#transfer-check');click('#transfer-next');
  T.bindTransfer(cb,cb);click('#transfer-reveal');click('#transfer-next');
  const data=JSON.parse([...storage.values()][0]);assert.equal(data.length,1);assert.equal(data[0].results.length,3);

@@ -54,6 +54,9 @@ class AnalysisTest(unittest.TestCase):
     def test_same_day_and_epoch_ms(self):
         out = self.analyze([self.row() | dict(previous_review_at=str(A.timestamp('2026-11-07T16:00:00Z').timestamp()*1000))])
         self.assertEqual(out['by_interval']['same_day']['n'],1)
+    def test_zero_previous_timestamp_is_not_a_multidecade_interval(self):
+        out=self.analyze([self.row() | dict(previous_review_at='0')])
+        self.assertEqual(out['coverage']['known_interval_n'],0)
     def test_empty_and_old_header_fail_truthfully(self):
         with tempfile.TemporaryDirectory() as tmp:
             p=Path(tmp)/'old.csv';p.write_text('date,grade\n2026-11-07,3\n')

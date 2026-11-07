@@ -1336,7 +1336,7 @@ export function renderStudy() {
       (patterns ? '<div class="ipa">搭配提示：' + esc(patterns) + '</div>' : '')
     revealLabel = '看英文'
     const target = (p.collocations && p.collocations.length && p.collocations[0].pattern) || word.lemma
-    interactive = { kind: 'type', expected: String(target).replace(/\([^)]*\)/g, '').replace(/\s+/g, ' ').trim() }
+    interactive = { kind: 'type', expected: String(target).replace(/\([^)]*\)/g, '').replace(/\s+/g, ' ').trim(), zh: senses || patterns }
   } else if (type === 'cloze') {
     const cz = clozeOf(word)
     session.cloze = cz || null
