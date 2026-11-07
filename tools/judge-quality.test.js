@@ -28,7 +28,7 @@ test('offline, malformed, explicit unsure and context-free semantic replies cann
 }));
 test('old context-free v3 caches cannot bypass the current context',()=>fixture(J=>{global.localStorage.setItem('lexiloop.judgecache.v3',JSON.stringify({'complimented||compliments':{v:'alt',t:Date.now()}}));assert.equal(J.cachedVerdict('complimented','compliments',{sentence:'She ____ him yesterday.'}),null);}));
 test('semantic timeout aborts the request and returns unresolved',()=>fixture(async J=>{const native=global.setTimeout;let aborted=false;
- try{global.setTimeout=(fn,ms,...args)=>native(fn,ms===6000?5:ms,...args);const r=await J.reviewSemantics({expected:'help',given:'assist',zh:'帮助',chat:opts=>new Promise(()=>opts.signal.addEventListener('abort',()=>{aborted=true}))});assert.equal(r.verdict,null);assert.equal(aborted,true);}
+ try{global.setTimeout=(fn,ms,...args)=>native(fn,ms===J.SEMANTIC_TIMEOUT_MS?5:ms,...args);const r=await J.reviewSemantics({expected:'help',given:'assist',zh:'帮助',chat:opts=>new Promise(()=>opts.signal.addEventListener('abort',()=>{aborted=true}))});assert.equal(r.verdict,null);assert.equal(aborted,true);}
  finally{global.setTimeout=native;}
 }));
 
@@ -84,4 +84,28 @@ test('reviewed cloze alternatives work offline in their original sentences only'
   assert.equal(J.judgeTyped(given,expected,{sentence,locked:true}).verdict,'unsure');
   assert.equal(J.judgeTyped('not '+given,expected,{sentence}).verdict,'unsure');
  }
+}));
+
+
+test('semantic response budget admits a slow fixture and records exact unresolved reasons',()=>fixture(async J=>{
+ const o={expected:'handle',given:'address',sentence:'Please ________ the complaint.'};
+ const native=global.setTimeout;
+ try {
+  global.setTimeout=(fn,ms,...args)=>native(fn,ms===J.SEMANTIC_TIMEOUT_MS?30:ms,...args);
+  const reviewed=await J.reviewSemantics({...o,chat:async opts=>{
+   assert.equal(opts.maxTokens,512);await new Promise(resolve=>native(resolve,15));return '{"verdict":"alt"}';
+  }});
+  assert.equal(reviewed.verdict,'alt');assert.equal(reviewed.reason,'reviewed');
+ } finally {global.setTimeout=native;}
+ J.clearJudgeCache();
+ for(const [chat,reason] of [
+  [async()=>'', 'empty'], [async()=>'{"verdict":"unsure"}', 'ambiguous'],
+  [async()=>'{"verdict":"hit"}', 'invalid'],[async()=>'{"verdict":"alt"} trailing', 'invalid'],
+  [async()=>{throw Object.assign(Error('synthetic-only'),{code:'LLM_TRUNCATED'})},'truncated'],
+  [async()=>{throw Error('synthetic-only')},'unavailable'],
+ ]) {
+  const r=await J.reviewSemantics({...o,chat});assert.equal(r.reason,reason);assert.equal(r.verdict,null);
+  assert.equal(J.cachedVerdict(o.expected,o.given,o),null);
+ }
+ assert.equal((await J.reviewSemantics({...o,sentence:'',chat:async()=>''})).reason,'context');
 }));

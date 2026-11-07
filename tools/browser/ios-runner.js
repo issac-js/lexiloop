@@ -79,6 +79,24 @@ trigger.onclick = async () => {
     assert(corrected && corrected.payload.correction_history.length === 1, 'Correction history missing');
     assert(JSON.stringify(snapshot.cards) === before, 'Correction changed scheduling');
   });
+  await check('transfer pilot has reachable controls and keeps scheduling unchanged', async () => {
+    await reset('normal'); await tap('[data-tab=games]');
+    const before = JSON.stringify(window.__QA.snapshot());
+    await tap('#g-transfer');
+    for (let n = 0; n < 3; n++) {
+      await tap('#transfer-reveal');
+      assert(document.documentElement.scrollWidth <= innerWidth + 1, 'Transfer overflow');
+      const next = document.querySelector('#transfer-next');
+      assert(next.getBoundingClientRect().height >= 44, 'Small transfer control');
+      next.scrollIntoView({block:'center'}); await wait(100);
+      const r = next.getBoundingClientRect();
+      assert(next.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)), 'Transfer next covered');
+      await tap('#transfer-next');
+    }
+    assert(document.querySelector('#main').textContent.includes('本轮练习完成'), 'No transfer completion');
+    assert(JSON.stringify(window.__QA.snapshot()) === before, 'Pilot modified learning');
+    await tap('#transfer-home');
+  });
   await check('real Safari DOM new-card failure and consolidation flow persists across sync', async () => {
     await reset('learning');
     const answer = async (grade, independent) => {

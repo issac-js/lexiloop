@@ -2,25 +2,25 @@
  * views.js — 全部页面
  * 每个页面导出 render()（返回 HTML）与 bind()（挂载事件），由 app.js 调度。
  */
-import * as S from './store.js?v=128'
-import * as FSRS from './fsrs.js?v=128'
-import { CARD_TYPES, ENRICH_CONCURRENCY, RECOMMENDED_SETTINGS } from './config.js?v=128'
+import * as S from './store.js?v=129'
+import * as FSRS from './fsrs.js?v=129'
+import { CARD_TYPES, ENRICH_CONCURRENCY, RECOMMENDED_SETTINGS } from './config.js?v=129'
 import {
   esc, $, $$, toast, fail, ok, openModal, closeModal, confirmDialog,
   icon, LOGO_SVG, speak, fmtDateCN, relTime, STRENGTH_ZH, REGISTER_ZH,
   listEnVoices, getVoicePref, setVoicePref, getTheme, applyTheme,
-} from './ui.js?v=128'
-import * as AUTH from './cloud.js?v=128'
-import * as ENRICH from './enrich.js?v=128'
-import * as EXP from './exporter.js?v=128'
-import { createReviewRunner, parseReviewReport, auditEntry, REVIEW_TIMEOUT_MS } from './content-review.js?v=128'
-export { REVIEW_TIMEOUT_MS } from './content-review.js?v=128'
-import { parseImport, skippedLines, DEFAULT_MAX_WORDS } from './importer.js?v=128'
+} from './ui.js?v=129'
+import * as AUTH from './cloud.js?v=129'
+import * as ENRICH from './enrich.js?v=129'
+import * as EXP from './exporter.js?v=129'
+import { createReviewRunner, parseReviewReport, auditEntry, REVIEW_TIMEOUT_MS } from './content-review.js?v=129'
+export { REVIEW_TIMEOUT_MS } from './content-review.js?v=129'
+import { parseImport, skippedLines, DEFAULT_MAX_WORDS } from './importer.js?v=129'
 
 import {
-  judgeTyped, reviewSemantics, looksLikeEnglishPhrase, cachedVerdict, inflectionFeedback, articleDifference,
+  judgeTyped, reviewSemantics, looksLikeEnglishPhrase, cachedVerdict, inflectionFeedback, articleDifference, reviewStatusText,
   HIT, ALT, WRONG, UNSURE,
-} from './judge.js?v=128'
+} from './judge.js?v=129'
 
 /* ═════════════════════════ 通用片段 ═════════════════════════ */
 
@@ -1076,7 +1076,7 @@ export function sessionProgress() {
 export {
   normalizeAns, judgeTyped, looksLikeEnglishPhrase, reviewSemantics, cachedVerdict,
   clearJudgeCache, HIT, ALT, WRONG, UNSURE,
-} from './judge.js?v=128'
+} from './judge.js?v=129'
 
 const REG_ZH = { formal: '正式', neutral: '中性', spoken: '口语', informal: '非正式' }
 
@@ -1107,9 +1107,11 @@ export function verdictHTML(a, opts) {
   }
   if (a.verdict === UNSURE) {
     return '<div class="verdict unsure">' +
-      (articleDifference(a.expected, a.given) ? '这处冠词需要结合语境判断，暂<b>不算你错</b>。' : '这道题没法自动判定，<b>不算你错</b>。') +
+      (a.reviewReason ? esc(reviewStatusText(a.reviewReason)) + '，<b>不算你错</b>。' :
+        articleDifference(a.expected, a.given) ? '这处冠词需要结合语境判断，暂<b>不算你错</b>。' : '这道题没法自动判定，<b>不算你错</b>。') +
       '参考' + esc(word) + '：<b>' + exp + '</b>' +
-      (a.given ? '　你写的：' + esc(a.given) : '') + '</div>'
+      (a.given ? '　你写的：' + esc(a.given) : '') +
+      (o.retry && a.reviewReason && a.reviewReason !== 'context' ? '<button class="btn sm" id="ans-review-retry" style="display:block;margin-top:10px;min-height:44px;">重新核对表达</button>' : '') + '</div>'
   }
   if (a.ok) {
     // 本就是选择题的（抽测全选择/混合模式），和"打字题临时看选项"要分开说：
@@ -1395,7 +1397,7 @@ export function renderStudy() {
   const suggest = suggestGrade()
 
   // 作答反馈条 + 答错时的辨析（易混词 / 语域），与练习场、labs 共用同一实现
-  const feedback = verdictHTML(session.answered) +
+  const feedback = verdictHTML(session.answered, { retry: true }) +
     (session.answered && !session.answered.ok ? whyBlockHTML(word) : '')
 
   // 作答区（还没揭晓答案时）
@@ -1651,18 +1653,20 @@ export function bindStudy(go, onChanged) {
    *
    * 为什么要异步：本地只能比字符串，判断不了 address 是不是 deal with 的合理替代。
    * 为什么复核期间不先显示"不对"：先亮红再改口更伤人 —— 用户已经记住了那一下否定。
-   * 为什么要 6 秒超时 + 失败即 unsure：**宁可漏判，不可错判**。
+   * 为什么要有界超时 + 失败即 unsure：**宁可漏判，不可错判**。
    */
   const reviewIfNeeded = async () => {
     const a = session.answered
     const it = session.interactive
-    if (!a || !it || ![WRONG, UNSURE].includes(a.verdict)) return
+    if (!a || !it || a.reviewing || ![WRONG, UNSURE].includes(a.verdict)) return
     if (it.kind !== 'type' || !looksLikeEnglishPhrase(a.given)) return
 
     // 上次已经判过同样的组合：直接用缓存，不再等
     const hit = cachedVerdict(it.expected, a.given, { sentence: it.sentence || '', zh: it.zh || '', model: S.state.settings.llm_model || undefined })
     if (!hit) {
       a.reviewing = true
+      a.reviewReason = 'pending'
+      const ownerId = S.state.user && S.state.user.id
       onChanged()
       const res = await reviewSemantics({
         sentence: it.sentence || '',
@@ -1672,12 +1676,14 @@ export function bindStudy(go, onChanged) {
         chat: AUTH.chatText,
         model: S.state.settings.llm_model || undefined,
       })
-      if (session.answered !== a) return
+      if (session.answered !== a || (S.state.user && S.state.user.id) !== ownerId) return
       a.reviewing = false
+      a.reviewReason = res.reason
       applyVerbal(a, res.verdict)
       onChanged()
       return
     }
+    a.reviewReason = 'cached'
     applyVerbal(a, hit)
     onChanged()
   }
@@ -1698,6 +1704,9 @@ export function bindStudy(go, onChanged) {
       a.target = false
     }
   }
+
+  const retryReview = $('#ans-review-retry')
+  if (retryReview) retryReview.onclick = reviewIfNeeded
 
   const it0 = session.interactive
   if (it0) {
@@ -1841,6 +1850,7 @@ export function bindStudy(go, onChanged) {
         startedAt <= answeredAt && answeredAt <= gradedAt
       const observation = {
         version: 1,
+        review_reason: ans && ans.reviewReason || null,
         card_type: card.card_type || 'recognition',
         response_ms: validTiming ? answeredAt - startedAt : null,
         feedback_ms: validTiming ? gradedAt - answeredAt : null,

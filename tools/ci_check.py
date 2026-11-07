@@ -44,10 +44,14 @@ def main():
     sw = (APP / 'sw.js').read_text(encoding='utf-8')
     assert 'lexiloop-shell-v' + version + "'" in sw
     assert "'./styles.css?v=" + version + "'" in sw
+    assert set(re.findall(r'\?v=(\d+)', sw)) == {version}, 'stale SW precache version'
     json.loads((APP / 'manifest.webmanifest').read_text())
     run('node', 'tools/qa-fsrs.js')
     run('node', '--test', 'tools/goal-metrics.test.js')
     run('node', '--test', 'tools/judge-quality.test.js')
+    run('node', '--test', 'tools/cloud-stream.test.js')
+    run('node', '--test', 'tools/transfer-practice.test.js')
+    run(sys.executable, '-B', 'tools/test_learning_analysis.py')
     run('node', '--test', 'tools/color-contrast.test.js')
     run('node', '--test', 'tools/enrich-prompt.test.js')
     run('node', '--test', 'tools/live-checks.test.js')

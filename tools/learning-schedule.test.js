@@ -365,7 +365,7 @@ test('study records separate response and feedback time across reveal, rerender 
     let args = requests.filter(row => row.name === 'record_review').at(-1).args;
     assert.equal(args.p_elapsed_ms, 8000);
     assert.deepEqual(args.p_prev_state.learning_observation, {
-      version: 1, card_type: 'recognition', response_ms: 5000, feedback_ms: 3000, total_ms: 8000,
+      version: 1, review_reason: null, card_type: 'recognition', response_ms: 5000, feedback_ms: 3000, total_ms: 8000,
     });
     assert.equal(args.p_hinted, true);
     assert.equal(args.p_grade, 1); // Existing hard-hint scheduling still applies.

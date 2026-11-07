@@ -4,7 +4,7 @@
  * 统一收口三件事：初始化 SDK、邮箱认证、数据库读写、模型调用。
  * 其他模块一律通过本文件访问云端，不得自行 fetch '/.cloud/**'，也不得引入第二个客户端。
  */
-import { CLOUD_CONFIG } from './config.js?v=128'
+import { CLOUD_CONFIG } from './config.js?v=129'
 
 let cloud = null
 
@@ -171,6 +171,16 @@ function endpointOf(baseUrl) {
   return /\/chat\/completions$/.test(base) ? base : base + '/chat/completions'
 }
 
+function checkCompletion(chunk) {
+  const choice = chunk.choices && chunk.choices[0]
+  if (choice && choice.finish_reason === 'length') {
+    const err = new Error('模型输出达到长度上限，请重试')
+    err.code = 'LLM_TRUNCATED'
+    throw err
+  }
+  return choice && choice.delta
+}
+
 /** 收集 SSE 流，拼出完整回复 */
 async function streamOpenAICompatible(url, headers, body, o) {
   let res
@@ -203,30 +213,33 @@ async function streamOpenAICompatible(url, headers, body, o) {
   let buffer = ''
   let out = ''
 
-  for (;;) {
-    const step = await reader.read()
-    if (step.done) break
-    buffer += decoder.decode(step.value, { stream: true })
-    const lines = buffer.split('\n')
-    buffer = lines.pop()
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim()
-      if (!line || line.charAt(0) === ':') continue
-      if (line.indexOf('data:') !== 0) continue
-      const payload = line.slice(5).trim()
-      if (payload === '[DONE]') continue
-      try {
-        const chunk = JSON.parse(payload)
-        const delta = chunk.choices && chunk.choices[0] && chunk.choices[0].delta
-        if (delta && delta.content) {
-          out += delta.content
-          if (o.onDelta) o.onDelta(delta.content)
-        }
-      } catch (e) {
-        /* 半包或非 JSON 帧，跳过 */
-      }
+  const consume = line => {
+    const text = line.trim()
+    if (!text.startsWith('data:')) return
+    const payload = text.slice(5).trim()
+    if (!payload || payload === '[DONE]') return
+    let chunk
+    try { chunk = JSON.parse(payload) } catch (_) { return }
+    const delta = checkCompletion(chunk)
+    if (delta && typeof delta.content === 'string') {
+      out += delta.content
+      if (o.onDelta) o.onDelta(delta.content)
     }
   }
+  try {
+    for (;;) {
+      if (o.signal && o.signal.aborted) throw new Error('请求已取消')
+      const step = await reader.read()
+      if (step.done) break
+      buffer += decoder.decode(step.value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop()
+      lines.forEach(consume)
+    }
+    buffer += decoder.decode()
+    // Some compatible servers close after the last frame without a trailing newline.
+    if (buffer.trim()) consume(buffer)
+  } finally { reader.releaseLock() }
   if (!out) throw new Error('自定义 API 没有返回内容，请检查模型名是否正确')
   return out
 }
@@ -349,6 +362,7 @@ export async function chatText(o) {
   if (custom) return chatViaCustom(custom, o)
 
   const model = await pickModel(o.model)
+  if (o.signal && o.signal.aborted) throw new Error('请求已取消')
   const params = {
     model: model.id,
     messages: [
@@ -364,7 +378,8 @@ export async function chatText(o) {
 
   let out = ''
   for await (const chunk of getCloud().llm.chat.completions.create(params)) {
-    const delta = chunk.choices && chunk.choices[0] && chunk.choices[0].delta
+    if (o.signal && o.signal.aborted) throw new Error('请求已取消')
+    const delta = checkCompletion(chunk)
     if (delta && delta.content) {
       out += delta.content
       if (o.onDelta) o.onDelta(delta.content)
