@@ -5,11 +5,11 @@
  * 再异步推到云端；换设备登录时从云端整体拉回。单用户跨设备不会并发改同一张卡，
  * 因此采用「以云端为权威 + 本地乐观更新」的简单模型。
  */
-import { db, getSession } from './cloud.js?v=127'
-import { LS_KEYS, DEFAULT_SETTINGS } from './config.js?v=127'
-import * as FSRS from './fsrs.js?v=127'
+import { db, getSession } from './cloud.js?v=128'
+import { LS_KEYS, DEFAULT_SETTINGS } from './config.js?v=128'
+import * as FSRS from './fsrs.js?v=128'
 /* 目标完成度的纯算术单独成模块，方便离线单测（工具页与今日页共用同一口径）。 */
-export { goalCompletion } from './goal-metrics.js?v=127'
+export { goalCompletion } from './goal-metrics.js?v=128'
 
 export const state = {
   booted: false,
@@ -382,7 +382,7 @@ export async function persistReview(log, card) {
     card_id: card.id,
     word_id: card.word_id,
     grade: log.grade,
-    elapsed_ms: log.elapsed_ms || null,
+    elapsed_ms: log.elapsed_ms ?? null,
     prev_state: log.prev_state,
     next_state: log.next_state,
     source: log.source || 'study',   // study=学习页 / game=练习场 / test=抽测，便于分开统计
@@ -423,7 +423,7 @@ export async function recordReview(log, card, opts) {
     p_card_id: card.id,
     p_word_id: card.word_id,
     p_grade: log.grade,
-    p_elapsed_ms: log.elapsed_ms || null,
+    p_elapsed_ms: log.elapsed_ms ?? null,
     p_prev_state: log.prev_state,
     p_next_state: log.next_state,
     p_source: log.source || 'study',
@@ -710,7 +710,7 @@ export async function pullMetrics(limit, force) {
 /** 拉最近的复习原始行（含 source / 前后状态，用于算保持率） */
 export async function fetchReviewRows(limit) {
   const res = await db().from('reviews')
-    .select('card_id, grade, source, elapsed_ms, prev_state, created_at')
+    .select('card_id, grade, source, elapsed_ms, prev_state, created_at, verdict, hinted, assisted')
     // 与 fetchReviews / 服务端 study_stats() 保持同一口径：
     // 只排除 is_test（测试模式/审计事件），**保留 source='test'（每周抽测）** ——
     // 抽测是真实练习，统计页要靠它算出"认出 vs 说出"的差距。
@@ -726,7 +726,7 @@ export async function fetchReviewRows(limit) {
  * 把复习日志算成指标：
  *  - passRate：一次通过率（grade ≥ 3）
  *  - predicted：FSRS 预测保持率（用上一次复习后的 stability + 实际间隔算 R）
- *  - avgMs：平均反应时间（学习 = 认真回忆，游戏/抽测 = 快速识别）
+ *  - avgMs：平均记录用时（历史及不同来源的计时口径可能不同）
  *  - bySource：按来源拆分（study / game / test），看得出"认出"和"说出"的差距
  */
 export function memoryMetrics(rows) {
@@ -836,24 +836,57 @@ export function memoryHealth() {
   }
 }
 
-/** 拉最近的复习记录（供导出自分析） */
-export async function fetchReviews(limit) {
-  const res = await db().from('reviews')
-    .select('created_at, grade, elapsed_ms, card_id, word_id, source, verdict, hinted, assisted')
-    // 测试/审计事件永远不进正式统计（is_test 由服务端与写入端共同维护）。
-    // 少了这个过滤，一次外部审计就会冒充成用户的真实记忆表现。
-    .eq('is_test', false)
-    .order('created_at', { ascending: false })
-    .limit(limit || 1000)
-  if (res.error) throw res.error
-  const rows = Array.isArray(res.data) ? res.data : []
-  // 补上词条与卡型，便于人读
-  return rows.map((r) => {
-    const card = state.cards.find((c) => c.id === r.card_id)
-    const w = card ? wordOf(card) : null
+/** Export a bounded, newest-first snapshot using stable review IDs. */
+export async function fetchReviews(limit = 1000) {
+  const maximum = Math.min(20000, Math.max(1, Math.floor(Number(limit) || 1000)))
+  const owner = state.user && state.user.id
+  const rows = []
+  let beforeId = null
+  while (rows.length < maximum) {
+    if ((state.user && state.user.id) !== owner) throw new Error('账号已切换，请重新导出')
+    const pageSize = Math.min(500, maximum - rows.length)
+    let query = db().from('reviews')
+      .select('id, created_at, grade, elapsed_ms, card_id, word_id, source, verdict, hinted, assisted, prev_state')
+      .eq('is_test', false)
+      .order('id', { ascending: false })
+      .limit(pageSize)
+    if (beforeId != null) query = query.lt('id', beforeId)
+    const res = await query
+    if ((state.user && state.user.id) !== owner) throw new Error('账号已切换，请重新导出')
+    if (res.error) throw res.error
+    const page = Array.isArray(res.data) ? res.data : []
+    if (!page.length) break
+    const nextId = page[page.length - 1].id
+    if (nextId == null || (beforeId != null && String(nextId) === String(beforeId))) {
+      throw new Error('复习记录分页异常，请重试')
+    }
+    rows.push(...page)
+    beforeId = nextId
+    if (page.length < pageSize) break
+  }
+  const words = new Map(state.words.map(word => [word.id, word]))
+  const cards = new Map(state.cards.map(card => [card.id, card]))
+  return rows.map(row => {
+    const card = cards.get(row.card_id)
+    const word = words.get(row.word_id)
+    const previous = row.prev_state || {}
+    const observation = previous.learning_observation
+    const measured = observation && observation.version === 1
     return {
-      created_at: r.created_at, grade: r.grade, elapsed_ms: r.elapsed_ms,
-      word: w ? (w.lemma || w.normalized) : '', card_type: card ? card.card_type : '',
+      created_at: row.created_at, grade: row.grade, elapsed_ms: row.elapsed_ms,
+      word: word ? (word.lemma || word.normalized) : '',
+      card_type: measured ? observation.card_type : (card ? card.card_type : ''),
+      id: row.id, card_id: row.card_id, word_id: row.word_id,
+      source: row.source || '', verdict: row.verdict || '',
+      hinted: typeof row.hinted === 'boolean' ? row.hinted : null,
+      assisted: typeof row.assisted === 'boolean' ? row.assisted : null,
+      timing_schema: measured ? 'study_wall_v1' : 'legacy_or_other',
+      response_ms: measured ? observation.response_ms : null,
+      feedback_ms: measured ? observation.feedback_ms : null,
+      card_type_source: measured ? 'at_review' : 'current_reference',
+      previous_status: previous.status || '',
+      previous_review_at: previous.last_review_at ?? null,
+      previous_stability: previous.stability ?? null,
     }
   })
 }

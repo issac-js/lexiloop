@@ -344,3 +344,114 @@ test('unresolved practice answers do not become Again or consume the daily budge
   assert.equal(requests.filter(r => r.name === 'record_review').length, 0);
   assert.equal(S.dailyReviewed(), 0);
 }));
+
+test('study records separate response and feedback time across reveal, rerender and next card', () => withApp(async ({ S, V, card, seed, requests }) => {
+  seed([card(1), card(2), card(3)]);
+  const originalNow = Date.now;
+  let now = originalNow();
+  Date.now = () => now;
+  const reveal = {}, button = { dataset: { g: '3' } };
+  globalThis.document = {
+    querySelector: selector => selector === '#reveal' ? reveal : null,
+    querySelectorAll: selector => selector === '[data-g]' ? [button] : [],
+  };
+  try {
+    V.resetSession();
+    V.bindStudy(() => {}, () => {});
+    now += 5000; reveal.onclick();
+    now += 1000; reveal.onclick(); // Repeated reveal cannot erase the original submission time.
+    V.renderStudy();
+    now += 2000; await button.onclick();
+    let args = requests.filter(row => row.name === 'record_review').at(-1).args;
+    assert.equal(args.p_elapsed_ms, 8000);
+    assert.deepEqual(args.p_prev_state.learning_observation, {
+      version: 1, card_type: 'recognition', response_ms: 5000, feedback_ms: 3000, total_ms: 8000,
+    });
+    assert.equal(args.p_hinted, true);
+    assert.equal(args.p_grade, 1); // Existing hard-hint scheduling still applies.
+    now += 2000; V.bindStudy(() => {}, () => {}); reveal.onclick();
+    now += 1000; await button.onclick();
+    args = requests.filter(row => row.name === 'record_review').at(-1).args;
+    assert.equal(args.p_elapsed_ms, 3000);
+    assert.equal(args.p_prev_state.learning_observation.response_ms, 2000);
+  } finally { Date.now = originalNow; }
+}));
+
+test('clock reversal leaves study timing unknown instead of inventing a positive duration', () => withApp(async ({ V, card, seed, requests }) => {
+  seed([card(1)]);
+  const originalNow = Date.now;
+  let now = originalNow();
+  Date.now = () => now;
+  const reveal = {}, button = { dataset: { g: '1' } };
+  globalThis.document = { querySelector: selector => selector === '#reveal' ? reveal : null,
+    querySelectorAll: selector => selector === '[data-g]' ? [button] : [] };
+  try {
+    V.resetSession(); V.bindStudy(() => {}, () => {});
+    now -= 1000; reveal.onclick();
+    now += 2000; await button.onclick();
+    const args = requests.find(row => row.name === 'record_review').args;
+    assert.equal(args.p_elapsed_ms, null);
+    assert.equal(args.p_prev_state.learning_observation.response_ms, null);
+  } finally { Date.now = originalNow; }
+}));
+
+test('review export preserves evidence, paginates a stable snapshot and marks legacy timing', () => withApp(async ({ S, database, seed, card, load }) => {
+  seed([card(1)]);
+  const rows = Array.from({ length: 502 }, (_, index) => ({
+    id: index + 1, card_id: 1, word_id: 1, grade: 3, elapsed_ms: 8000,
+    source: 'study', created_at: '2026-11-07T01:00:00.000Z',
+    verdict: 'alt', hinted: false, assisted: false, is_test: false,
+    prev_state: { status: 'review', stability: 5, last_review_at: 1793926800000,
+      learning_observation: { version: 1, card_type: 'cloze', response_ms: 5000, feedback_ms: 3000, total_ms: 8000 } },
+  }));
+  rows[0].hinted = null; rows[0].assisted = null; rows[0].prev_state = {};
+  rows[1].card_id = 999; // Removed card still has a word ID in its historical review.
+  rows.push({ ...rows[0], id: 503, is_test: true });
+  let calls = 0;
+  database.from = table => {
+    assert.equal(table, 'reviews');
+    let before = Infinity, maximum, formalOnly = false;
+    const query = {
+      select(columns) { assert.ok(columns.includes('prev_state')); return this; },
+      eq(field, value) { assert.equal(field, 'is_test'); assert.equal(value, false); formalOnly = true; return this; },
+      order(field) { assert.equal(field, 'id'); return this; },
+      limit(value) { maximum = value; return this; },
+      lt(field, value) { assert.equal(field, 'id'); before = value; return this; },
+      then(resolve, reject) {
+        assert.ok(formalOnly);
+        const page = rows.filter(row => !row.is_test && row.id < before).sort((a, b) => b.id - a.id).slice(0, maximum);
+        calls++;
+        if (calls === 1) rows.push({ ...rows[1], id: 999 }); // Concurrent inserts cannot shift later pages.
+        return Promise.resolve({ data: page, error: null }).then(resolve, reject);
+      },
+    };
+    return query;
+  };
+  const exported = await S.fetchReviews(1000);
+  assert.equal(calls, 2);
+  assert.equal(exported.length, 502);
+  assert.equal(new Set(exported.map(row => row.id)).size, 502);
+  assert.equal(exported[0].id, 502);
+  assert.equal(exported[0].card_type, 'cloze');
+  assert.equal(exported[0].hinted, false);
+  assert.equal(exported[0].verdict, 'alt');
+  assert.equal(exported.at(-1).hinted, null);
+  assert.equal(exported.at(-1).timing_schema, 'legacy_or_other');
+  assert.equal(exported.at(-1).response_ms, null);
+  assert.equal(exported.at(-2).word, 'word1');
+  const E = await load('exporter.js');
+  const csv = E.buildReviewsCsv([exported[0], { ...exported.at(-1), word: 'say "hello",\nplease' }]);
+  assert.match(csv.split('\n')[0], /created_at_iso,id,card_id,word_id,source,verdict,hinted,assisted/);
+  assert.match(csv, /"2026-11-07T01:00:00.000Z"/);
+  assert.match(csv, /"alt","false","false","study_wall_v1","5000","3000"/);
+  assert.ok(csv.includes('"say ""hello"",\nplease"'));
+}));
+
+test('review export discards data if the account changes during a page request', () => withApp(async ({ S, database }) => {
+  database.from = () => {
+    const query = { select() { return this; }, eq() { return this; }, order() { return this; }, limit() { return this; },
+      then(resolve, reject) { S.state.user = { id: 'another-owner' }; return Promise.resolve({ data: [{ id: 1 }], error: null }).then(resolve, reject); } };
+    return query;
+  };
+  await assert.rejects(S.fetchReviews(10), /账号已切换/);
+}));

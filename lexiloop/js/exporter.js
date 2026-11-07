@@ -455,7 +455,10 @@ export function buildAnkiCsv(items) {
 /** 复习记录 CSV：date,word,card_type,grade,elapsed_ms —— 供自己分析遗忘规律 */
 export function buildReviewsCsv(rows) {
   const q = (s) => '"' + String(s == null ? '' : s).replace(/"/g, '""') + '"'
-  const L = ['date,word,card_type,grade,grade_label,elapsed_ms']
+  const fields = ['id', 'card_id', 'word_id', 'source', 'verdict', 'hinted', 'assisted',
+    'timing_schema', 'response_ms', 'feedback_ms', 'card_type_source',
+    'previous_status', 'previous_review_at', 'previous_stability']
+  const L = ['date,word,card_type,grade,grade_label,elapsed_ms,created_at_iso,' + fields.join(',')]
   const LABEL = { 1: '忘了', 2: '吃力', 3: '记得', 4: '很简单' }
   rows.forEach((r) => {
     L.push([
@@ -465,6 +468,8 @@ export function buildReviewsCsv(rows) {
       String(r.grade || ''),
       q(LABEL[r.grade] || ''),
       String(r.elapsed_ms == null ? '' : r.elapsed_ms),
+      q(r.created_at || ''),
+      ...fields.map(field => q(r[field])),
     ].join(','))
   })
   return L.join('\n')

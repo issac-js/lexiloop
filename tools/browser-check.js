@@ -115,6 +115,18 @@ async function main() {
           await page.locator('#ans-reveal,#reveal').first().click();
           await page.locator('[data-g="1"]').click(); await pause(400);
           assert.equal(await page.evaluate(() => window.__QA.snapshot().reviews.length), 1);
+          const review = await page.evaluate(() => window.__QA.snapshot().reviews[0]);
+          const observation = review.prev_state.learning_observation;
+          assert.equal(observation.version, 1);
+          assert.equal(review.elapsed_ms, observation.response_ms + observation.feedback_ms);
+          await tab('me');
+          const downloaded = page.waitForEvent('download');
+          await page.locator('#me-reviews').click();
+          const download = await downloaded;
+          const csv = fs.readFileSync(await download.path(), 'utf8');
+          assert.match(csv, /source,verdict,hinted,assisted/);
+          assert.match(csv, /study_wall_v1/);
+
           // This interaction consumes the one-card learning fixture. Leave later tests a fresh fixture.
           await page.evaluate(() => localStorage.removeItem('__lexiloop_fixture_learning'));
         });
