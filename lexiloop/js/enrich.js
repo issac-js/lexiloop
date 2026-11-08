@@ -168,6 +168,12 @@ export function validateEntry(raw, term) {
     return { data: null, dropped: 0, notes: ['模型输出不是对象'] }
   }
 
+  // Inspect original labels before normalizers can turn an unknown register into neutral.
+  const rawQuality = assessContent({normalized:term,payload:parsed})
+  if (rawQuality.issues.length) {
+    notes.push(...rawQuality.issues)
+    parsed = rawQuality.payload
+  }
   const dropped = []
   const collocations = []
 
@@ -246,6 +252,8 @@ export function validateEntry(raw, term) {
     confidence: overallRaw == null ? avg : Math.max(0, Math.min(1, overallRaw)),
     prompt_version: PROMPT_VERSION,
   }
+
+  if (rawQuality.issues.length) data.pos = [...new Set(data.senses.map(s => s.pos).filter(Boolean))]
 
   // 形态校验：命中就在写入前标出来（不是丢弃 —— 罕见但真实的用法也会命中，交给人判断）。
   // 这是"新导入的词不再产生错误搭配"的第一道闸门。

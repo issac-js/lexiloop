@@ -15,3 +15,11 @@ test('noun plurals and a later verb sense are not mistaken for invented verb for
  assert.equal(E.validatePayload({senses:[{pos:'noun',def_zh:'杯子'}],collocations:[{examples:[{en:'The cups are on the table.'}]}]},'cup').ok,true);
  assert.equal(E.validatePayload({senses:[{pos:'noun',def_zh:'层'},{pos:'verb',def_zh:'分层'}],collocations:[{examples:[{en:'She layered the materials very carefully.'}]}]},'layer').ok,true);
 }));
+
+test('generation cannot erase an archaic label by normalizing it to a neutral register',()=>load(async(E)=>{
+ const raw={lemma:'help',pos:['verb'],senses:[{pos:'verb',def_zh:'帮助'}],collocations:[
+  {pattern:'help someone',register:'archaic',examples:[{en:'Please help someone with this task.'}]},
+  {pattern:'help a student',register:'neutral',examples:[{en:'Please help a student with this task.'}]}
+ ]};
+ const r=E.validateEntry(raw,'help');assert.equal(r.data.collocations.length,1);assert.equal(r.data.collocations[0].pattern,'help a student');assert.ok(r.notes.length);
+}));
