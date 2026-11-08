@@ -5,13 +5,15 @@ const list = x => Array.isArray(x) ? x : []
 const text = x => String(x || '')
 const verb = x => /^(?:v\.?|verb)$/i.test(text(x).trim())
 const rare = x => /\b(?:archaic|obsolete|dialect(?:al)?|dated)\b|古体|古语|古用法|废弃用法|方言用法|方言形式/i.test(text(x))
+// Usage labels differ from ordinary meanings: archaic/obsolete/dialect are modern words too.
+const rareAnnotation = x => /[[(（【]\s*(?:archaic|obsolete|dialect(?:al)?|dated|古体|古语|古用法|方言)[\])）】]|\b(?:archaic|obsolete|dialect(?:al)?|dated)\s+(?:form|usage|spelling|sense)\b|(?:古体|古语|方言|废弃)(?:或方言)?(?:用法|形式)/i.test(text(x))
 export const contentKey = w => JSON.stringify([w.normalized, w.lemma, w.payload || {}])
 
 /** Narrow, sourced exception for the reported false verb. Not a noun-to-verb blacklist. */
 function falseLiverVerb(w, value) {
   return text(w.normalized || w.lemma).toLowerCase().trim() === 'liver' &&
-    (/^liver(?:s|ed|ing)?\s+(?:with|in|at|on|together|under)\b/i.test(text(value.pattern)) ||
-     /\b(?:would|will|to|can)\s+liver\b/i.test(list(value.examples).map(e => e.en).join(' ')))
+    (/居住|同住|住在/.test(text(value.zh)) ||
+     /\b(?:he|she|they|we|i|you|knight|man|woman)\s+(?:would|will|should|can|could)\s+liver\b/i.test(list(value.examples).map(e => e.en).join(' ')))
 }
 
 export function assessContent(w) {
@@ -19,14 +21,14 @@ export function assessContent(w) {
   const issues = [], badSenses = new Set(), badCollocations = new Set()
   const liver = text(w?.normalized || w?.lemma).toLowerCase().trim() === 'liver'
   senses.forEach((s, i) => {
-    if (rare([s?.register, s?.usage, s?.def_en, s?.def_zh].join(' ')) || (liver && verb(s?.pos))) {
+    if ((rare([s?.register, s?.usage].join(' ')) || rareAnnotation([s?.def_en, s?.def_zh].join(' '))) || (liver && verb(s?.pos))) {
       badSenses.add(i)
       issues.push('释义 ' + (i + 1) + '：罕见用法或词性依据待核实，暂不用于现代英语练习。')
     }
   })
   const allSensesUnsafe = senses.length > 0 && badSenses.size === senses.length
   colls.forEach((c, i) => {
-    if (allSensesUnsafe || rare([c?.register, c?.usage, c?.zh].join(' ')) || falseLiverVerb(w || {}, c || {})) {
+    if (allSensesUnsafe || (rare([c?.register, c?.usage].join(' ')) || rareAnnotation(c?.zh)) || falseLiverVerb(w || {}, c || {})) {
       badCollocations.add(i)
       issues.push('搭配 ' + (i + 1) + '：参考用法待核实，暂不出题。')
     }

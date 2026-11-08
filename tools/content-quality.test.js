@@ -50,3 +50,20 @@ test('known repair is a sourced draft, keeps original object and unrelated metad
  assert.equal(Q.assessContent({...w,payload:draft.payload}).issues.length,0);assert.equal(draft.payload.senses[0].pos,'noun');
  assert.equal(Q.repairDraft({normalized:'other',payload:w.payload}),null);
 });
+
+test('ordinary meanings mentioning archaic, obsolete or dialect are not usage labels',async()=>{
+ const Q=await modulePromise;
+ for(const [normalized,def_en,def_zh] of [['archaic','very old or old-fashioned','古老的；过时的'],['dialect','a regional dialect or language variety','方言'],['obsolete','dated or no longer in use','废弃的；过时的']]){
+  const r=Q.assessContent({normalized,payload:{senses:[{pos:'noun',def_en,def_zh}],collocations:[{pattern:'ordinary '+normalized,zh:def_zh}]}});
+  assert.equal(r.blocked,false);assert.equal(r.issues.length,0,normalized);
+ }
+});
+
+test('liver food phrases, prepositional nouns and noun-subject questions remain learnable',async()=>{
+ const Q=await modulePromise;
+ for(const c of [
+  {pattern:'liver with onions',examples:[{en:'We cooked liver with onions for dinner.'}]},
+  {pattern:'damage to liver cells',examples:[{en:'The infection causes damage to liver cells.'}]},
+  {pattern:'liver function',examples:[{en:'Can liver function improve after treatment?'}]},
+ ]) assert.equal(Q.assessContent(word([good],[c])).issues.length,0,c.pattern);
+});
