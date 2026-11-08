@@ -109,3 +109,33 @@ test('semantic response budget admits a slow fixture and records exact unresolve
  }
  assert.equal((await J.reviewSemantics({...o,sentence:'',chat:async()=>''})).reason,'context');
 }));
+
+test('structured feedback handles alternative-word inflection and survives contextual cache replay',()=>fixture(async J=>{
+ const o={expected:'warrants',given:'deserve',sentence:'The new evidence ________ further investigation.',zh:'新证据值得进一步调查。'};
+ const feedback={grammar:'incorrect',meaning:'fits',issue:'inflection',correction:'deserves',explanation:'evidence 作单数，当前一般现在时使用 deserves。'};
+ const r=await J.reviewSemantics({...o,chat:async()=>JSON.stringify({verdict:'wrong',...feedback})});
+ assert.equal(r.verdict,'wrong');assert.deepEqual(r.feedback,feedback);
+ assert.equal(J.coachingFeedback({...o,verdict:'wrong',feedback:r.feedback}).issue,'inflection');
+ const cached=await J.reviewSemantics({...o,chat:async()=>{throw Error('must use cache')}});
+ assert.equal(cached.cached,true);assert.deepEqual(cached.feedback,feedback);
+ const renewed=await J.reviewSemantics({...o,force:true,chat:async()=>'{"verdict":"unsure"}'});
+ assert.equal(renewed.verdict,null);assert.equal(renewed.reason,'ambiguous');
+ assert.equal(J.cachedVerdict(o.expected,o.given,o),null);
+ // A forced unresolved result must not leave an old confident rejection behind.
+}));
+test('contradictory, unsafe or invented coaching is rejected and never cached',()=>fixture(async J=>{
+ const o={expected:'warrants',given:'deserve',sentence:'The new evidence ________ further investigation.'};
+ const valid={verdict:'wrong',grammar:'incorrect',meaning:'fits',issue:'inflection',correction:'deserves',explanation:'主谓一致'};
+ for(const change of [{verdict:'alt'},{grammar:'correct'},{correction:'warrants'},{correction:'does not deserve'},
+  {correction:'deserve something'},{explanation:''},{meaning:'unknown'},{issue:'nonsense'}]){
+  const r=await J.reviewSemantics({...o,chat:async()=>JSON.stringify({...valid,...change})});
+  assert.equal(r.verdict,null);assert.equal(r.reason,'invalid');assert.equal(J.cachedVerdict(o.expected,o.given,o),null);
+ }
+}));
+test('grammar-correct meaning distinctions remain separate from acceptable alternatives',()=>fixture(async J=>{
+ const o={expected:'refer',given:'introduce',sentence:'I can ________ you to the support team.'};
+ const feedback={grammar:'correct',meaning:'different',issue:'meaning',correction:'',explanation:'introduce 是介绍认识；refer 强调转介求助。'};
+ const r=await J.reviewSemantics({...o,chat:async()=>JSON.stringify({verdict:'wrong',...feedback})});
+ assert.equal(r.verdict,'wrong');assert.equal(r.feedback.grammar,'correct');
+ assert.equal(J.parseCoaching({verdict:'alt',...feedback},o),null);
+}));

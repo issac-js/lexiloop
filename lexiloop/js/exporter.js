@@ -457,7 +457,7 @@ export function buildReviewsCsv(rows) {
   const q = (s) => '"' + String(s == null ? '' : s).replace(/"/g, '""') + '"'
   const fields = ['id', 'card_id', 'word_id', 'source', 'verdict', 'hinted', 'assisted',
     'timing_schema', 'response_ms', 'feedback_ms', 'card_type_source',
-    'previous_status', 'previous_review_at', 'previous_stability', 'review_reason']
+    'previous_status', 'previous_review_at', 'previous_stability', 'review_reason', 'corrected_with_feedback']
   const L = ['date,word,card_type,grade,grade_label,elapsed_ms,created_at_iso,' + fields.join(',')]
   const LABEL = { 1: '忘了', 2: '吃力', 3: '记得', 4: '很简单' }
   rows.forEach((r) => {

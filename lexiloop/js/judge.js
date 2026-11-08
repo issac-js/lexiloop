@@ -23,7 +23,7 @@
 
 /* v3：词形变体改用"代入式语法判断"专用提示词 —— 旧问法实测会波动
    （同一用例 8 次采样 7 次对、1 次错），旧缓存里的结论不能重放。 */
-const LS_CACHE = 'lexiloop.judgecache.v7'
+const LS_CACHE = 'lexiloop.judgecache.v8'
 const CACHE_MAX = 400
 export const SEMANTIC_TIMEOUT_MS = 12000
 export const SEMANTIC_MAX_TOKENS = 512
@@ -180,9 +180,13 @@ function cacheKey(expected, given, context = {}) {
 }
 
 /** 读取已缓存的复核结论（不发请求）。用于渲染时立刻拿到上次的判定 */
-export function cachedVerdict(expected, given, context) {
+export function cachedReview(expected, given, context) {
   const c = loadCache()[cacheKey(expected, given, context)]
-  return c && Date.now() - c.t < 30 * 86400000 && ['alt', 'wrong'].includes(c.v) ? c.v : null
+  return c && Date.now() - c.t < 30 * 86400000 && ['alt', 'wrong'].includes(c.v) ? { verdict:c.v, feedback:c.feedback || null } : null
+}
+
+export function cachedVerdict(expected, given, context) {
+  return cachedReview(expected, given, context)?.verdict || null
 }
 
 /** Article differences need context; never erase articles or directly accept them. */
@@ -207,6 +211,39 @@ const SYS_PROMPT =
   '特别注意：例文用什么形式不影响判定 —— "She ___ him on his skills" 填 compliments 或 complimented 都成立（无时间词，不锁定时态）；\n' +
   '动词原形不能因词义正确就放行：She intercede 和 The bank deduct money from 均主谓不一致。\n' +
   '只有语法不成立才判 wrong，例如 "She ___ him yesterday" 填 compliments。'
+
+const COACH_PROMPT = '\n在 verdict 之外同时返回以下字段：' +
+  'grammar:"correct"|"incorrect"|"unknown", meaning:"fits"|"different"|"unknown", ' +
+  'issue:"none"|"inflection"|"grammar"|"meaning", correction:"修改后的完整填空内容或空字符串", ' +
+  'explanation:"不超过120字的中文具体差异及原因"。' +
+  'alt 必须 grammar=correct、meaning=fits、issue=none。wrong 必须有明确错误依据；' +
+  '语法正确而句意不同使用 issue=meaning。选词成立但词形错误时使用 issue=inflection，' +
+  'correction 保留用户选词，只调整必要词形，不能替换成参考答案冒充词形纠正。' +
+  '词义接近不保证整句成立；不可忽略否定、数量、冠词、介词或时间限制。没有依据时用 unsure。'
+
+/** Validate model coaching; a correction never proves the original answer correct. */
+export function parseCoaching(j, o) {
+  if (!['correct','incorrect','unknown'].includes(j.grammar) ||
+      !['fits','different','unknown'].includes(j.meaning) ||
+      !['none','inflection','grammar','meaning'].includes(j.issue) ||
+      typeof j.correction !== 'string' || typeof j.explanation !== 'string' ||
+      j.correction.length > 160 || !j.explanation.trim() || j.explanation.length > 180) return null
+  if (j.verdict === ALT && (j.grammar !== 'correct' || j.meaning !== 'fits' || j.issue !== 'none')) return null
+  if (j.verdict === WRONG && !((j.grammar === 'incorrect' && ['grammar','inflection'].includes(j.issue)) ||
+      (j.grammar === 'correct' && j.meaning === 'different' && j.issue === 'meaning'))) return null
+  if (j.issue === 'inflection' && (j.meaning !== 'fits' ||
+      !looksLikeEnglishPhrase(j.correction) || !inflectionDifference(j.correction, o.given) ||
+      (String(o.sentence || '').match(/_{3,}/g) || []).length !== 1)) return null
+  return { grammar:j.grammar, meaning:j.meaning, issue:j.issue,
+    correction:j.correction.trim(), explanation:j.explanation.trim() }
+}
+
+/** Shared across study/quiz feedback. Only validated, context-bound correction metadata. */
+export function coachingFeedback(a) {
+  const f = a && a.feedback
+  if (!f || a.verdict !== WRONG) return null
+  return parseCoaching({ ...f, verdict:a.verdict }, a)
+}
 
 function reviewPrompt(o) {
   return (o.sentence
@@ -343,8 +380,9 @@ export async function reviewSemantics(o) {
   const unresolved = reason => ({ verdict: null, cached: false, reason })
   if (!o || !o.chat || !o.expected || !o.given) return unresolved('context')
   const key = cacheKey(o.expected, o.given, o)
-  const hit = cachedVerdict(o.expected, o.given, o)
-  if (hit) return { verdict: hit, cached: true, reason: 'cached' }
+  if (o.force) { delete loadCache()[key]; saveCache() }
+  const hit = o.force ? null : cachedReview(o.expected, o.given, o)
+  if (hit) return { ...hit, cached: true, reason: 'cached' }
   if (!o.sentence && !o.zh) return unresolved('context')
   const controller = new AbortController()
   let timer = null
@@ -354,7 +392,7 @@ export async function reviewSemantics(o) {
   })
   try {
     const raw = await Promise.race([
-      o.chat({ system: useFormMode(o) ? SYS_FORM_PROMPT : SYS_PROMPT,
+      o.chat({ system: (useFormMode(o) ? SYS_FORM_PROMPT : SYS_PROMPT) + COACH_PROMPT,
         user: useFormMode(o) ? formReviewPrompt(o) : reviewPrompt(o),
         json: true, temperature: 0, maxTokens: SEMANTIC_MAX_TOKENS,
         model: o.model, signal: controller.signal }), guard,
@@ -369,9 +407,12 @@ export async function reviewSemantics(o) {
     if (v === 'unsure') return unresolved('ambiguous')
     if (v !== ALT && v !== WRONG) return unresolved('invalid')
     if (v === WRONG && articleDifference(o.expected, o.given)) return unresolved('article')
-    loadCache()[key] = { v, t: Date.now() }
+    const detailed = ['grammar','meaning','issue','correction','explanation'].some(k => Object.hasOwn(j,k))
+    const feedback = detailed ? parseCoaching(j, o) : null
+    if (detailed && !feedback) return unresolved('invalid')
+    loadCache()[key] = { v, feedback, t: Date.now() }
     saveCache()
-    return { verdict: v, cached: false, reason: 'reviewed' }
+    return { verdict: v, feedback, cached: false, reason: 'reviewed' }
   } catch (e) {
     return unresolved(controller.signal.aborted ? 'timeout' : e && e.code === 'LLM_TRUNCATED' ? 'truncated' : 'unavailable')
   } finally { if (timer) clearTimeout(timer) }
@@ -398,8 +439,8 @@ export function __seedJudgeCache(expected, given, verdict, context) {
  *  复制件会与产品漂移，出现"探针全绿、线上照旧"的假信心。产品代码不得调用。 */
 export function __prompts() {
   return {
-    general: SYS_PROMPT,
-    form: SYS_FORM_PROMPT,
+    general: SYS_PROMPT + COACH_PROMPT,
+    form: SYS_FORM_PROMPT + COACH_PROMPT,
     formMode: useFormMode,
     generalPrompt: reviewPrompt,
     formPrompt: formReviewPrompt,

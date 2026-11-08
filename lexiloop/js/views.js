@@ -2,25 +2,25 @@
  * views.js — 全部页面
  * 每个页面导出 render()（返回 HTML）与 bind()（挂载事件），由 app.js 调度。
  */
-import * as S from './store.js?v=129'
-import * as FSRS from './fsrs.js?v=129'
-import { CARD_TYPES, ENRICH_CONCURRENCY, RECOMMENDED_SETTINGS } from './config.js?v=129'
+import * as S from './store.js?v=130'
+import * as FSRS from './fsrs.js?v=130'
+import { CARD_TYPES, ENRICH_CONCURRENCY, RECOMMENDED_SETTINGS } from './config.js?v=130'
 import {
   esc, $, $$, toast, fail, ok, openModal, closeModal, confirmDialog,
   icon, LOGO_SVG, speak, fmtDateCN, relTime, STRENGTH_ZH, REGISTER_ZH,
   listEnVoices, getVoicePref, setVoicePref, getTheme, applyTheme,
-} from './ui.js?v=129'
-import * as AUTH from './cloud.js?v=129'
-import * as ENRICH from './enrich.js?v=129'
-import * as EXP from './exporter.js?v=129'
-import { createReviewRunner, parseReviewReport, auditEntry, REVIEW_TIMEOUT_MS } from './content-review.js?v=129'
-export { REVIEW_TIMEOUT_MS } from './content-review.js?v=129'
-import { parseImport, skippedLines, DEFAULT_MAX_WORDS } from './importer.js?v=129'
+} from './ui.js?v=130'
+import * as AUTH from './cloud.js?v=130'
+import * as ENRICH from './enrich.js?v=130'
+import * as EXP from './exporter.js?v=130'
+import { createReviewRunner, parseReviewReport, auditEntry, REVIEW_TIMEOUT_MS } from './content-review.js?v=130'
+export { REVIEW_TIMEOUT_MS } from './content-review.js?v=130'
+import { parseImport, skippedLines, DEFAULT_MAX_WORDS } from './importer.js?v=130'
 
 import {
-  judgeTyped, reviewSemantics, looksLikeEnglishPhrase, cachedVerdict, inflectionFeedback, articleDifference, reviewStatusText,
+  judgeTyped, reviewSemantics, looksLikeEnglishPhrase, cachedVerdict, cachedReview, coachingFeedback, inflectionFeedback, articleDifference, reviewStatusText,
   HIT, ALT, WRONG, UNSURE,
-} from './judge.js?v=129'
+} from './judge.js?v=130'
 
 /* ═════════════════════════ 通用片段 ═════════════════════════ */
 
@@ -1074,9 +1074,9 @@ export function sessionProgress() {
    且"未命中目标表达"不再等同于"错"（四态 hit / alt / wrong / unsure）。
    这里只做 re-export，保持既有 import 路径不变。 */
 export {
-  normalizeAns, judgeTyped, looksLikeEnglishPhrase, reviewSemantics, cachedVerdict,
+  normalizeAns, judgeTyped, looksLikeEnglishPhrase, reviewSemantics, cachedVerdict, cachedReview,
   clearJudgeCache, HIT, ALT, WRONG, UNSURE,
-} from './judge.js?v=129'
+} from './judge.js?v=130'
 
 const REG_ZH = { formal: '正式', neutral: '中性', spoken: '口语', informal: '非正式' }
 
@@ -1090,6 +1090,15 @@ const REG_ZH = { formal: '正式', neutral: '中性', spoken: '口语', informal
  * @param {object} a session.answered / d.answered 形状的判定结果
  * @param {{taskLabel?:string}} [opts] taskLabel 默认"目标搭配"
  */
+function correctionPracticeHTML(a, o) {
+  if (!o.retry) return ''
+  return '<details class="feedback-detail"><summary>试着修正一次（可选）</summary>' +
+    '<p class="tiny">这是看反馈后的巩固练习，不改首次判定，不额外写入评分。</p>' +
+    '<label for="ans-practice">修改后的填空内容</label><input class="input" id="ans-practice" maxlength="160" value="' + esc(a.practiceText || '') + '">' +
+    '<button class="btn" id="ans-practice-check" style="margin-top:8px;min-height:44px;">核对这次修正</button>' +
+    (a.practiceChecked ? '<p role="status">' + (a.practiceSucceeded ? '已按反馈完成修正。继续按首次回忆情况自评即可。' : '还未匹配这次参考调整，请再对照一下；其他写法不在这里自动判错。') + '</p>' : '') + '</details>'
+}
+
 export function verdictHTML(a, opts) {
   if (!a) return ''
   const o = opts || {}
@@ -1129,14 +1138,29 @@ export function verdictHTML(a, opts) {
       (a.typo ? '基本正确，但有拼写错误：' : '答对了：') + '<b>' + exp + '</b>' +
       (a.typo ? '　你写的：' + esc(a.given) : '') + '</div>'
   }
+  const coach = coachingFeedback(a)
+  if (coach) {
+    const lead = coach.issue === 'inflection' ? '选词思路成立，再调整一下词形。' :
+      coach.grammar === 'correct' ? '这句话语法成立，与本题要表达的意思有差别。' : '这里需要调整一处语法或用法。'
+    return '<div class="verdict coach">' + lead + '<p>' + esc(coach.explanation) + '</p>' +
+      (coach.issue === 'inflection' ? '<p><b>' + esc(a.given) + '</b> → <b>' + esc(coach.correction) + '</b></p>' : '') +
+      '<details class="feedback-detail"><summary>查看表达与整句对照</summary><p>你的表达：' + esc(a.given) + '</p>' +
+      '<p>本题目标：' + exp + '</p>' +
+      (coach.correction ? '<p>核对建议：' + esc(coach.correction) + '</p>' : '') +
+      (a.sentence ? '<p>' + esc(a.sentence.replace(/_{3,}/, () => a.given)) + '</p>' : '') + '</details>' +
+      (coach.issue === 'inflection' ? correctionPracticeHTML(a, o) : '') +
+      (o.retry ? '<button class="btn sm" id="ans-review-retry" style="min-height:44px;">这处提示有疑问，重新核对</button>' : '') + '</div>'
+  }
   const form = inflectionFeedback(a)
   if (form) {
     return '<div class="verdict coach">已想起目标表达，再调整一下词形：<b>' + esc(form.given) + '</b> → 例句使用 <b>' + esc(form.expected) + '</b>' +
       (form.kind ? '（' + esc(form.kind) + '）' : '') + '。' +
       '<details class="feedback-detail"><summary>查看整句对照</summary><div>你的句子：' + esc(form.givenSentence) + '</div>' +
-      '<div>参考填法：' + esc(form.referenceSentence) + '</div></details></div>'
+      '<div>参考填法：' + esc(form.referenceSentence) + '</div></details>' + correctionPracticeHTML(a, o) + '</div>'
   }
-  return '<div class="verdict bad">' + (a.sentence ? '这次先记住这个用法，参考填法是 ' : '可以这样表达： ') + '<b>' + exp + '</b>　你写的：' + esc(a.given) + '</div>'
+  return '<div class="verdict coach">参考表达：<b>' + exp + '</b>　你写的：' + esc(a.given) +
+    '<p>这次没有具体差异说明，可先对照用法；评分请按实际回忆情况选择。</p>' +
+    (o.retry && looksLikeEnglishPhrase(a.given) ? '<button class="btn sm" id="ans-review-retry" style="min-height:44px;">重新核对表达</button>' : '') + '</div>'
 }
 
 /**
@@ -1220,8 +1244,9 @@ function suggestGrade() {
   // 用"显示选项"选对的：识别成功，但不是无提示产出。封顶到"吃力"，
   // 让这张卡更快回来做一次真正自己想出来的 —— 选择题答对≠能自然用出来。
   if (a.assist && a.ok) return 2
-  if (inflectionFeedback(a)) return 2
-  if (!a.ok) return 1
+  if (inflectionFeedback(a) || coachingFeedback(a)?.issue === 'inflection') return 2
+  // A missing explanation or semantic distinction is not evidence of forgetting.
+  if (!a.ok) return a.empty ? 1 : null
   if (a.typo) return 2
   const secs = (Date.now() - (session.cardShownAt || Date.now())) / 1000
   const base = secs <= 8 ? 4 : 3
@@ -1398,7 +1423,7 @@ export function renderStudy() {
 
   // 作答反馈条 + 答错时的辨析（易混词 / 语域），与练习场、labs 共用同一实现
   const feedback = verdictHTML(session.answered, { retry: true }) +
-    (session.answered && !session.answered.ok ? whyBlockHTML(word) : '')
+    (session.answered?.verdict === WRONG && !coachingFeedback(session.answered) ? whyBlockHTML(word) : '')
 
   // 作答区（还没揭晓答案时）
   let answerArea = ''
@@ -1655,15 +1680,16 @@ export function bindStudy(go, onChanged) {
    * 为什么复核期间不先显示"不对"：先亮红再改口更伤人 —— 用户已经记住了那一下否定。
    * 为什么要有界超时 + 失败即 unsure：**宁可漏判，不可错判**。
    */
-  const reviewIfNeeded = async () => {
+  const reviewIfNeeded = async (force = false) => {
     const a = session.answered
     const it = session.interactive
     if (!a || !it || a.reviewing || ![WRONG, UNSURE].includes(a.verdict)) return
     if (it.kind !== 'type' || !looksLikeEnglishPhrase(a.given)) return
 
     // 上次已经判过同样的组合：直接用缓存，不再等
-    const hit = cachedVerdict(it.expected, a.given, { sentence: it.sentence || '', zh: it.zh || '', model: S.state.settings.llm_model || undefined })
+    const hit = force === true ? null : cachedReview(it.expected, a.given, { sentence: it.sentence || '', zh: it.zh || '', model: S.state.settings.llm_model || undefined })
     if (!hit) {
+      if (force === true) { a.practiceChecked = false; a.practiceSucceeded = false; a.practiceText = '' }
       a.reviewing = true
       a.reviewReason = 'pending'
       const ownerId = S.state.user && S.state.user.id
@@ -1673,18 +1699,21 @@ export function bindStudy(go, onChanged) {
         zh: it.zh || '',
         expected: it.expected,
         given: a.given,
+        force: force === true,
         chat: AUTH.chatText,
         model: S.state.settings.llm_model || undefined,
       })
       if (session.answered !== a || (S.state.user && S.state.user.id) !== ownerId) return
       a.reviewing = false
       a.reviewReason = res.reason
+      a.feedback = res.feedback || null
       applyVerbal(a, res.verdict)
       onChanged()
       return
     }
     a.reviewReason = 'cached'
-    applyVerbal(a, hit)
+    a.feedback = hit.feedback
+    applyVerbal(a, hit.verdict)
     onChanged()
   }
 
@@ -1705,8 +1734,21 @@ export function bindStudy(go, onChanged) {
     }
   }
 
+  const practice = $('#ans-practice')
+  if (practice) practice.oninput = () => { if (session.answered) session.answered.practiceText = practice.value }
+  const practiceCheck = $('#ans-practice-check')
+  if (practiceCheck) practiceCheck.onclick = () => {
+    const a = session.answered
+    if (!a || a.reviewing) return
+    const correction = coachingFeedback(a)?.issue === 'inflection' ? a.feedback.correction : inflectionFeedback(a) ? a.expected : ''
+    if (!correction) return
+    a.practiceChecked = true
+    a.practiceSucceeded = judgeTyped(a.practiceText, correction, {spelling:true}).verdict === HIT
+    onChanged()
+  }
+
   const retryReview = $('#ans-review-retry')
-  if (retryReview) retryReview.onclick = reviewIfNeeded
+  if (retryReview) retryReview.onclick = () => reviewIfNeeded(true)
 
   const it0 = session.interactive
   if (it0) {
@@ -1851,6 +1893,7 @@ export function bindStudy(go, onChanged) {
       const observation = {
         version: 1,
         review_reason: ans && ans.reviewReason || null,
+        corrected_with_feedback: !!ans?.practiceSucceeded,
         card_type: card.card_type || 'recognition',
         response_ms: validTiming ? answeredAt - startedAt : null,
         feedback_ms: validTiming ? gradedAt - answeredAt : null,

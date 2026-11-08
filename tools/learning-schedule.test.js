@@ -365,7 +365,7 @@ test('study records separate response and feedback time across reveal, rerender 
     let args = requests.filter(row => row.name === 'record_review').at(-1).args;
     assert.equal(args.p_elapsed_ms, 8000);
     assert.deepEqual(args.p_prev_state.learning_observation, {
-      version: 1, review_reason: null, card_type: 'recognition', response_ms: 5000, feedback_ms: 3000, total_ms: 8000,
+      version: 1, review_reason: null, corrected_with_feedback: false, card_type: 'recognition', response_ms: 5000, feedback_ms: 3000, total_ms: 8000,
     });
     assert.equal(args.p_hinted, true);
     assert.equal(args.p_grade, 1); // Existing hard-hint scheduling still applies.
@@ -445,8 +445,8 @@ test('review export preserves evidence, paginates a stable snapshot and marks le
   const csv = E.buildReviewsCsv([exported[0], { ...exported.at(-1), word: 'say "hello",\nplease' }]);
   assert.match(csv.split('\n')[0], /created_at_iso,id,card_id,word_id,source,verdict,hinted,assisted/);
   assert.match(csv, /"2026-11-07T01:00:00.000Z"/);
-  assert.match(csv.split('\n')[0], /previous_stability,review_reason$/);
-  assert.match(csv.split('\n')[1], /,"reviewed"$/);
+  assert.match(csv.split('\n')[0], /previous_stability,review_reason,corrected_with_feedback$/);
+  assert.match(csv.split('\n')[1], /,"reviewed",""$/);
   assert.match(csv, /"alt","false","false","study_wall_v1","5000","3000"/);
   assert.ok(csv.includes('"say ""hello"",\nplease"'));
 }));
