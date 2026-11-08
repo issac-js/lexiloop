@@ -92,8 +92,8 @@ export function createReviewRunner(deps) {
     if (job && job.running) { if (job.owner !== deps.owner()) throw Error('原账号的任务正在停止，请稍后重试。'); return }
     const owner = deps.owner()
     model = model || 'auto'
-    if (!job || job.scope !== scope || job.done >= job.ids.length || job.model !== model) {
-      job = normalize({ owner, scope, ids: [...new Set(ids)], completed: [], model })
+    if (!job || job.scope !== scope || job.done >= job.ids.length || job.model !== model || job.ruleVersion !== REVIEW_VERSION) {
+      job = normalize({ owner, scope, ids: [...new Set(ids)], completed: [], model, ruleVersion:REVIEW_VERSION })
     }
     const j = job, completed = doneIds(), claimed = new Set()
     j.running = true; j.pauseRequested = false; j.lastError = ''

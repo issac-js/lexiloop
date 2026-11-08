@@ -14,7 +14,7 @@ import {
 import * as AUTH from './cloud.js?v=131'
 import * as ENRICH from './enrich.js?v=131'
 import * as EXP from './exporter.js?v=131'
-import { createReviewRunner, parseReviewReport, auditEntry, REVIEW_TIMEOUT_MS } from './content-review.js?v=131'
+import { createReviewRunner, parseReviewReport, auditEntry, REVIEW_VERSION, REVIEW_TIMEOUT_MS } from './content-review.js?v=131'
 export { REVIEW_TIMEOUT_MS } from './content-review.js?v=131'
 import { parseImport, skippedLines, DEFAULT_MAX_WORDS } from './importer.js?v=131'
 
@@ -3421,6 +3421,7 @@ function reviewHint() {
   const st = reviewStatus()
   if (!st) return '未开始'
   if (st.running) return st.pauseRequested ? '正在暂停' : '进行中'
+  if (st.ruleVersion !== REVIEW_VERSION) return '新规则待复核'
   if (st.lastError) return '需重试'
   return st.done >= st.total ? '已完成' : '可继续'
 }
@@ -3432,6 +3433,7 @@ function reviewProgressHTML() {
   const label = st.running ? (st.pauseRequested ? '正在暂停 ' : '复核中 ') :
     st.lastError ? '复核中断 ' : st.done >= st.total ? '已完成 ' : '已暂停 '
   return '<div class="tiny" role="status" aria-live="polite" style="margin:0 0 10px;line-height:1.7;">' +
+    (st.ruleVersion !== REVIEW_VERSION ? '这是旧规则的历史进度；下次启动将按新规则重新检查，尚未自动调用模型。<br>' : '') +
     label + st.done + ' / ' + st.total + ' 个词条（' + pct + '%，已处理）' +
     (st.current ? '　·　' + esc(st.current) : '') + '<br>' +
     '模型复核 ' + st.reviewed + ' 条，规则检查完成 ' + st.rules + ' 条<br>' +
@@ -3454,7 +3456,7 @@ function reviewJobRunning() {
 function reviewPanelHTML() {
   const st = reviewStatus()
   const running = !!(st && st.running)
-  const resume = st && !running && st.done < st.total
+  const resume = st && st.ruleVersion === REVIEW_VERSION && !running && st.done < st.total
   const suspects = S.state.words.filter(w => assessContent(w).issues.length)
   return '<details class="content-quality-scan"><summary style="min-height:44px;cursor:pointer;">参考用法检查：' + suspects.length + ' / ' + S.state.words.length + ' 个已加载词条需核对</summary><p class="tiny">本地规则检查，不调用 AI，不代表全库权威核验。问题义项和搭配已暂不用于练习；原文保留供核对。其他正确内容照常学习。</p>' +
     suspects.slice(0, 30).map(w => '<button class="btn sm" data-quality-word="' + w.id + '" style="min-height:44px;margin:4px;">核对 ' + esc(w.lemma || w.normalized) + '</button>').join('') +
