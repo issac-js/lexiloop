@@ -30,8 +30,16 @@
         words[0].normalized = words[0].lemma = 'liver';
         words[0].payload = {senses:[{pos:'verb',def_zh:'居住（古体或方言形式）'}],collocations:[{pattern:'liver with someone',examples:[{en:'The knight would liver with his lord.',zh:'骑士与领主同住。'}]}]};
       }
+      if (name === 'noun-number' && i === 1) {
+        words[0].normalized = words[0].lemma = 'amenity';
+        words[0].payload = {senses:[{pos:'noun',def_zh:'便利设施'}],collocations:[{pattern:'hotel amenities',zh:'酒店设施',examples:[{en:'The hotel amenities include a pool and a gym.',zh:'酒店设施包括泳池和健身房。'}]}]};
+      }
+      if (name === 'campus-number' && i === 1) {
+        words[0].normalized = words[0].lemma = 'campus operations';
+        words[0].payload = {senses:[{pos:'noun',def_zh:'校园运营'}],collocations:[{pattern:'campus operations team',zh:'校园运营团队',examples:[{en:'The campus operations team coordinates maintenance and events across all buildings.',zh:'校园运营团队协调所有建筑的维护和活动。'}]}]};
+      }
       const isNew = name === 'learning' || (!['large', 'goal-recorded'].includes(name) && i > 6);
-      cards.push({ id: i, word_id: i, card_type: name === 'coaching' && i === 1 ? 'cloze' : name === 'semantic' && i === 1 ? 'production' : 'recognition', deck: '默认词单', status: isNew ? 'new' : 'review',
+      cards.push({ id: i, word_id: i, card_type: ['coaching','noun-number','campus-number'].includes(name) && i === 1 ? 'cloze' : name === 'semantic' && i === 1 ? 'production' : 'recognition', deck: '默认词单', status: isNew ? 'new' : 'review',
         due: new Date(Date.now() - (name === 'overdue' && i === 1 ? 2 * 86400000 : 60000)).toISOString(),
         stability: isNew ? 0 : 5, difficulty: 5, reps: isNew ? 0 : 5, lapses: 0, last_review_at: new Date(Date.now() - 3 * 86400000).toISOString() });
     }

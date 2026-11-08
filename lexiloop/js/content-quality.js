@@ -12,7 +12,8 @@ export const contentKey = w => JSON.stringify([w.normalized, w.lemma, w.payload 
 /** Narrow, sourced exception for the reported false verb. Not a noun-to-verb blacklist. */
 function falseLiverVerb(w, value) {
   return text(w.normalized || w.lemma).toLowerCase().trim() === 'liver' &&
-    (/居住|同住|住在/.test(text(value.zh)) ||
+    ((/^verb\+/.test(text(value.type)) && /^liver\b/i.test(text(value.pattern))) ||
+     /居住|同住|住在/.test(text(value.zh)) ||
      /\b(?:he|she|they|we|i|you|knight|man|woman)\s+(?:would|will|should|can|could)\s+liver\b/i.test(list(value.examples).map(e => e.en).join(' ')))
 }
 
@@ -43,13 +44,16 @@ export function assessContent(w) {
       }
     }
   } catch (_) { /* A malformed report is never a source of authority. */ }
-  list(p.confusables).forEach(c => { if (rare(c?.note)) issues.push('辨析：罕见用法说明待核实，暂不作为学习依据。') })
+  const badConfusable = c => rare(c?.note) || (liver && /动词\s*liver\b|verb\s+liver\b/i.test(text(c?.note)))
+  list(p.confusables).forEach(c => { if (badConfusable(c)) issues.push('辨析：用法依据待核实，暂不作为学习依据。') })
+  const unsafeExamples = new Set([...badCollocations].flatMap(i => list(colls[i]?.examples).map(e => text(e?.en).trim())))
   const payload = { ...p,
     senses: senses.filter((_, i) => !badSenses.has(i)),
     collocations: colls.filter((_, i) => !badCollocations.has(i)),
-    source_examples: allSensesUnsafe ? [] : list(p.source_examples).filter(e => !(liver && falseLiverVerb(w, { examples:[e] }))),
+    source_examples: allSensesUnsafe ? [] : list(p.source_examples).filter(e => !unsafeExamples.has(text(e?.en).trim()) && !(liver && falseLiverVerb(w, { examples:[e] }))),
     // Unverified historical claims are not instructional facts, including in the confusion box.
-    confusables: list(p.confusables).filter(c => !rare(c?.note)),
+    confusables: list(p.confusables).filter(c => !badConfusable(c)),
+    word_family:list(p.word_family).filter(x => !(liver && /^(?:live|lives|living|lived)$/i.test(text(x)))),
   }
   const usable = payload.senses.some(s => s && (s.def_zh || s.def_en)) ||
     payload.collocations.some(c => c?.pattern) || payload.source_examples.some(e => e?.en)
@@ -63,13 +67,14 @@ export function learningWord(w) {
 /** A reviewed draft, never an automatic cloud overwrite. Existing metadata is preserved. */
 export function repairDraft(w) {
   if (text(w?.normalized || w?.lemma).toLowerCase().trim() !== 'liver' || !assessContent(w).issues.length) return null
+  const eligible=assessContent(w).payload
   return { source:'https://www.oxfordlearnersdictionaries.com/us/definition/english/liver',
     payload:{ ...(w.payload || {}), lemma:'liver', pos:['noun'],
       senses:[{pos:'noun',def_en:'a large organ in the body that processes substances in the blood',def_zh:'肝脏；（食用的）动物肝脏'}],
-      collocations:[
+      collocations:eligible.collocations.length ? eligible.collocations : [
         {pattern:'liver disease',type:'fixed phrase',strength:'strong',register:'neutral',zh:'肝病',examples:[{en:'The doctor is treating a patient with liver disease.',zh:'医生正在治疗一名肝病患者。'}]},
         {pattern:'liver function',type:'fixed phrase',strength:'strong',register:'neutral',zh:'肝功能',examples:[{en:'This blood test checks your liver function.',zh:'这项血液检查用于检查肝功能。'}]},
-      ], source_examples:[], confusables:[{word:'live',note:'live 是“居住”的动词；liver 在这里学习现代英语名词“肝脏”。'}],
-      word_family:[], mnemonic:null,
+      ], source_examples:eligible.source_examples, confusables:[{word:'live',note:'live 是“居住”的动词；liver 在这里学习现代英语名词“肝脏”。'}],
+      word_family:eligible.word_family, mnemonic:null,
     } }
 }

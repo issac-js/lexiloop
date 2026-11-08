@@ -1113,6 +1113,7 @@ export function verdictHTML(a, opts) {
     return '<div class="verdict unsure">正在核对你的表达…（这道题的目标是 <b>' + exp + '</b>）</div>'
   }
   if (a.verdict === ALT) {
+    if (a.note) return '<div class="verdict good">表达思路成立：<b>' + esc(a.given) + '</b><p>' + esc(a.note) + '</p><p class="tiny">参考表达：' + exp + '。本次记为可接受表达，不等同于已独立提取目标形式；请按回忆情况自评。</p></div>'
     return '<div class="verdict good">你的表达也对：<b>' + esc(a.given) + '</b> —— 英语没问题。' +
       '本题的' + esc(word) + '是 <b>' + exp + '</b>，顺手把这条搭配记一下就行。</div>'
   }
@@ -1681,11 +1682,11 @@ export function bindStudy(go, onChanged) {
     if (!it || session.answered) return          // 防重复提交：双击/回车连发只算一次
     const inp = $('#ans-in')
     const given = inp ? inp.value : ''
-    const r = judgeTyped(given, it.expected, { accept: it.accept, sentence: it.sentence })
+    const r = judgeTyped(given, it.expected, { accept: it.accept, sentence: it.sentence, zh:it.zh })
     session.answered = {
       ok: r.ok, verdict: r.verdict, typo: r.typo, loose: r.loose,
       empty: r.empty, given: given, expected: it.expected, kind: it.kind, sentence: it.sentence || '',
-      pos: it.pos || [],
+      pos: it.pos || [], note:r.note || '',
     }
     revealStudyAnswer()
     onChanged()
@@ -2838,6 +2839,8 @@ function openWordCorrection(word, onChanged, draft, draftSource) {
     add(['collocations', i, 'pattern'], '搭配 ' + (i + 1)); add(['collocations', i, 'zh'], '搭配 ' + (i + 1) + ' · 中文'); add(['collocations', i, 'type'], '搭配 ' + (i + 1) + ' · 类型')
     ;(c.examples || []).forEach((e, j) => { add(['collocations', i, 'examples', j, 'en'], '搭配 ' + (i + 1) + ' · 例句 ' + (j + 1)); add(['collocations', i, 'examples', j, 'zh'], '搭配 ' + (i + 1) + ' · 译文 ' + (j + 1)) })
   })
+  ;(payload.confusables || []).forEach((c, i) => { add(['confusables', i, 'word'], '辨析 ' + (i + 1) + ' · 词条'); add(['confusables', i, 'note'], '辨析 ' + (i + 1) + ' · 说明') })
+  ;(payload.word_family || []).forEach((w, i) => add(['word_family', i], '同族词 ' + (i + 1)))
   ;(payload.source_examples || []).forEach((e, i) => { add(['source_examples', i, 'en'], '原始例句 ' + (i + 1)); add(['source_examples', i, 'zh'], '原始译文 ' + (i + 1)) })
   openModal('<h3>核对并修正：' + esc(word.lemma || word.normalized) + '</h3>' +
     '<p class="tiny">先对照词典或原始语料核实。修改的是共享词条内容；保存前展示差异，卡片学习进度保留。</p>' + reviewReportHTML(word) +
@@ -2854,6 +2857,8 @@ function openWordCorrection(word, onChanged, draft, draftSource) {
       const target = f.path.slice(0, -1).reduce((o, key) => o[key], payload)
       target[f.path.at(-1)] = value
     })
+    if (Array.isArray(payload.confusables)) payload.confusables=payload.confusables.filter(c => c.word && c.note)
+    if (Array.isArray(payload.word_family)) payload.word_family=payload.word_family.filter(Boolean)
     if (!changes.length && JSON.stringify(payload) === JSON.stringify(baseline.payload)) return fail('还没有修改内容')
     if (auditEntry({ ...word, payload }).some(x => x.severity === 'blocking')) return fail('修正后仍有阻断问题，请核对释义、词性和例句')
     if (!(await confirmDialog({ title: '确认保存这些修正？', sub: '会保留原内容版本和学习进度。',

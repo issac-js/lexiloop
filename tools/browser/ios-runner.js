@@ -97,6 +97,17 @@ trigger.onclick = async () => {
     assert(JSON.stringify(window.__QA.snapshot()) === before, 'Pilot modified learning');
     await tap('#transfer-home');
   });
+  await check('both screenshot number variations get positive local feedback and preserve self-grading', async () => {
+    for (const [scenario,given] of [['noun-number','hotel amenity'],['campus-number','campus operation']]) {
+      await reset(scenario); const calls=window.__reviewMock.calls;
+      await tap('#start-study');document.querySelector('#ans-in').value=given;await tap('#ans-go');
+      assert(document.querySelector('.verdict.good')?.textContent.includes('表达思路成立'),'Missing positive number guidance');
+      assert(!document.querySelector('[data-g="1"].sug'),'Incorrect Again recommendation');
+      assert(window.__reviewMock.calls===calls,'Unnecessary model call');await wait(400);await tap('[data-g="3"]');
+      assert(window.__QA.snapshot().reviews[0]?.verdict==='alt','Accepted number variation stored as wrong');
+    }
+    await reset('normal');
+  });
   await check('question reference rejection skips without writing review or scheduling', async () => {
     await reset('coaching'); window.__reviewMock.mode = 'reference-invalid';
     const before=JSON.stringify(window.__QA.snapshot().cards);
