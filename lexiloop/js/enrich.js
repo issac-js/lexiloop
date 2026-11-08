@@ -7,9 +7,10 @@
  *   2. 结构层面：强制 JSON 输出，字段枚举固定
  *   3. 校验层面：本地规则闸门，不通过的一律丢弃（宁可少，不可假）
  */
-import { chatText, pickModelAfter } from './cloud.js?v=130'
+import { assessContent } from './content-quality.js?v=131'
+import { chatText, pickModelAfter } from './cloud.js?v=131'
 
-export const PROMPT_VERSION = 'colloc-v2'
+export const PROMPT_VERSION = 'colloc-v3'
 
 /** 单个词条最多保留多少条搭配（模型常超发，这里硬截断） */
 export const MAX_COLLOCATIONS = 6
@@ -22,6 +23,8 @@ const SYSTEM_PROMPT = [
   'You are a lexicographer writing collocation entries for an advanced Chinese-speaking learner',
   'who needs natural professional English.',
   '',
+  'Use established modern English senses. Never invent an archaic, dialectal or obsolete sense to justify an otherwise invalid form.',
+  'If uncertain, omit the sense or collocation; do not claim a dictionary was consulted.',
   'Rules:',
   '1. Output ONLY one valid JSON object. No prose, no markdown fences.',
   '2. Collocations must be high-frequency natural chunks a native speaker produces without',
@@ -75,7 +78,7 @@ function buildUserPrompt(term) {
        学习者无法自查。复核闸门能抓，但那是事后；这里在生成阶段就禁掉。 */
     '- every collocation "type" and "pattern" MUST match the TARGET part of speech: ' +
     'for a noun target never output a verb inflection or verb pattern ' +
-    '(no "sentineled", "vinegared", "counciled"); noun collocations are noun phrases ' +
+    '(do not infer a new verb merely from a noun); noun collocations are noun phrases ' +
     'or noun + preposition (e.g. "council meeting", "vinegar on chips")',
     '- for a verb target, patterns must be verb patterns (e.g. "expedite the process"), ' +
     'never the noun used as a verb; if the target is both noun and verb, each collocation ' +
@@ -165,6 +168,12 @@ export function validateEntry(raw, term) {
     return { data: null, dropped: 0, notes: ['模型输出不是对象'] }
   }
 
+  // Inspect original labels before normalizers can turn an unknown register into neutral.
+  const rawQuality = assessContent({normalized:term,payload:parsed})
+  if (rawQuality.issues.length) {
+    notes.push(...rawQuality.issues)
+    parsed = rawQuality.payload
+  }
   const dropped = []
   const collocations = []
 
@@ -244,8 +253,16 @@ export function validateEntry(raw, term) {
     prompt_version: PROMPT_VERSION,
   }
 
+  if (rawQuality.issues.length) data.pos = [...new Set(data.senses.map(s => s.pos).filter(Boolean))]
+
   // 形态校验：命中就在写入前标出来（不是丢弃 —— 罕见但真实的用法也会命中，交给人判断）。
   // 这是"新导入的词不再产生错误搭配"的第一道闸门。
+  const quality = assessContent({normalized:term,payload:data})
+  if (quality.issues.length && !quality.blocked) {
+    Object.assign(data, quality.payload)
+    data.pos = [...new Set(data.senses.map(s => s.pos).filter(Boolean))]
+    notes.push(...quality.issues)
+  }
   const check = validatePayload(data, term)
   if (!check.ok) {
     data.verification_status = 'suspect'
@@ -277,13 +294,13 @@ export function validatePayload(data, term) {
   const t = String(term || (data && data.lemma) || '').toLowerCase().trim()
   const senses = (data && data.senses) || []
   const colls = (data && data.collocations) || []
-  const pos = String((senses[0] || {}).pos || '').toLowerCase()
+  const pos = senses.map(s => String(s.pos || '').toLowerCase()).join('/')
 
   if (!t) problems.push('缺少词条本身')
   if (!senses.length) problems.push('缺少义项')
   if (!colls.length) problems.push('缺少搭配')
 
-  const isVerb = pos === 'v' || pos === 'verb' || pos === 'v.'
+  const isVerb = senses.some(s => /^(?:v\.?|verb)$/i.test(String(s.pos || '')))
   const esc = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
   colls.forEach((c, i) => {
@@ -292,7 +309,7 @@ export function validatePayload(data, term) {
     const low = ex.toLowerCase()
     if (!isVerb && !/\s/.test(t)) {
       // ★ 核心规则：词性不是动词，例句却出现它的动词形式 —— 虚构动词的典型特征
-      if (new RegExp('\\b' + esc(t) + '(ed|ing|es|s)\\b', 'i').test(low)) {
+      if (new RegExp('\\b' + esc(t) + '(ed|ing)\\b', 'i').test(low)) {
         problems.push('第 ' + (i + 1) + ' 条：词性标注为「' + (pos || '未知') + '」，例句却把该词当动词用 —— ' + ex.slice(0, 70))
       }
     }
@@ -305,6 +322,7 @@ export function validatePayload(data, term) {
     }
   })
 
+  problems.push(...assessContent({normalized:t,payload:data}).issues)
   return { ok: problems.length === 0, problems: problems }
 }
 
@@ -321,6 +339,8 @@ export function validatePayload(data, term) {
 export const REVIEW_SYSTEM_PROMPT = [
   'You are a lexicographer reviewing an English vocabulary card for a Chinese university campus-safety officer (CEFR B1-B2).',
   'Judge strictly and honestly. Output JSON only, no prose.',
+  'Independently inspect every example as a potential answer reference, not just whether it repeats the pattern.',
+  'Unsupported archaic/dialect/obsolete claims are not evidence for modern usage; flag that specific material. Do not invent sources.',
   'Schema:',
   '{"pos_ok":true|false,"pos_issue":"词性标注错在哪，没错就空字符串",',
   ' "collocations":[{"index":1,"idiomatic":true|false,"register":"formal|neutral|informal|technical|literary|dated","issue":"具体问题，没问题就空字符串"}],',
@@ -328,7 +348,7 @@ export const REVIEW_SYSTEM_PROMPT = [
   ' "severity":"none|advisory|blocking","reason":"一句话","suggestions":["可供人工核实的修改建议；不编造词典出处"]}',
   'severity 判定标准：',
   '- blocking：**词性的根本性错误**（名词、形容词被标成动词），或**整条词条的释义是虚构的**（英语中不存在该义项）。这类会建立错误的词感，必须挡住。',
-  '- advisory：个别搭配不地道、单条例句有小语法错、义项不全 —— 词条主体可用，学习者从其他搭配仍能学到正确用法。记录即可，不必挡住。',
+  '- advisory：个别搭配不地道、单条例句有小语法错、义项不全 —— 词条主体可用，学习者从其他搭配仍能学到正确用法。隔离有具体错误的搭配及例句，其他正确内容可继续学习，不必挡住整条词条。',
   '- none：没有问题。',
   '关键区分：**问题出在"词条本身"还是"某一条搭配"**。前者 blocking，后者 advisory。',
   '**以下情况不算错误，不要判 blocking**（词典常规做法）：',
@@ -381,6 +401,7 @@ export async function reviewTerm(entry, opts) {
     ok: true,
     severity: sev,
     issues: issues,
+    quarantinedCollocations:j.collocations.filter(x => x.idiomatic === false).map(x => x.index - 1),
     missing: (j.missing_senses || []).filter(Boolean),
     kinds: (j.pos_ok === false ? 'pos ' : '') + (issues.length ? 'coll ' : '') + ((j.missing_senses || []).length ? 'sense' : ''),
     register: (j.collocations || []).map((x) => x.register).filter(Boolean),
@@ -418,6 +439,8 @@ const LEECH_SYSTEM_PROMPT = [
   'You are a lexicographer fixing a flashcard that a Chinese learner keeps forgetting.',
   'The research is clear: when a card fails repeatedly, the CARD is the problem, not the learner.',
   '',
+  'Use established modern English senses. Never invent an archaic, dialectal or obsolete sense to justify an otherwise invalid form.',
+  'If uncertain, omit the sense or collocation; do not claim a dictionary was consulted.',
   'Rules:',
   '1. Output ONLY one valid JSON object. No prose, no markdown fences.',
   '2. Rewrite the entry to be SHORTER and more CONCRETE than a normal entry:',

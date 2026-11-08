@@ -2,25 +2,26 @@
  * views.js — 全部页面
  * 每个页面导出 render()（返回 HTML）与 bind()（挂载事件），由 app.js 调度。
  */
-import * as S from './store.js?v=130'
-import * as FSRS from './fsrs.js?v=130'
-import { CARD_TYPES, ENRICH_CONCURRENCY, RECOMMENDED_SETTINGS } from './config.js?v=130'
+import * as S from './store.js?v=131'
+import * as FSRS from './fsrs.js?v=131'
+import { assessContent, repairDraft, learningWord } from './content-quality.js?v=131'
+import { CARD_TYPES, ENRICH_CONCURRENCY, RECOMMENDED_SETTINGS } from './config.js?v=131'
 import {
   esc, $, $$, toast, fail, ok, openModal, closeModal, confirmDialog,
   icon, LOGO_SVG, speak, fmtDateCN, relTime, STRENGTH_ZH, REGISTER_ZH,
   listEnVoices, getVoicePref, setVoicePref, getTheme, applyTheme,
-} from './ui.js?v=130'
-import * as AUTH from './cloud.js?v=130'
-import * as ENRICH from './enrich.js?v=130'
-import * as EXP from './exporter.js?v=130'
-import { createReviewRunner, parseReviewReport, auditEntry, REVIEW_TIMEOUT_MS } from './content-review.js?v=130'
-export { REVIEW_TIMEOUT_MS } from './content-review.js?v=130'
-import { parseImport, skippedLines, DEFAULT_MAX_WORDS } from './importer.js?v=130'
+} from './ui.js?v=131'
+import * as AUTH from './cloud.js?v=131'
+import * as ENRICH from './enrich.js?v=131'
+import * as EXP from './exporter.js?v=131'
+import { createReviewRunner, parseReviewReport, auditEntry, REVIEW_VERSION, REVIEW_TIMEOUT_MS } from './content-review.js?v=131'
+export { REVIEW_TIMEOUT_MS } from './content-review.js?v=131'
+import { parseImport, skippedLines, DEFAULT_MAX_WORDS } from './importer.js?v=131'
 
 import {
   judgeTyped, reviewSemantics, looksLikeEnglishPhrase, cachedVerdict, cachedReview, coachingFeedback, inflectionFeedback, articleDifference, reviewStatusText,
   HIT, ALT, WRONG, UNSURE,
-} from './judge.js?v=130'
+} from './judge.js?v=131'
 
 /* ═════════════════════════ 通用片段 ═════════════════════════ */
 
@@ -218,7 +219,7 @@ function needsEnrich(w) {
 }
 
 function wordAnswerHTML(word) {
-  const p = word.payload || {}
+  const p = learningWord(word).payload || {}
   const senses = (p.senses || []).map((s) =>
     '<li>' + (s.pos ? '<span class="tiny">' + esc(s.pos) + '.</span> ' : '') + esc(s.def_zh || s.def_en) + '</li>'
   ).join('')
@@ -1076,7 +1077,7 @@ export function sessionProgress() {
 export {
   normalizeAns, judgeTyped, looksLikeEnglishPhrase, reviewSemantics, cachedVerdict, cachedReview,
   clearJudgeCache, HIT, ALT, WRONG, UNSURE,
-} from './judge.js?v=130'
+} from './judge.js?v=131'
 
 const REG_ZH = { formal: '正式', neutral: '中性', spoken: '口语', informal: '非正式' }
 
@@ -1104,6 +1105,7 @@ export function verdictHTML(a, opts) {
   const o = opts || {}
   const word = o.taskLabel || '目标搭配'
   const exp = esc(a.expected || '')
+  if (a.referenceInvalid) return '<div class="verdict unsure">题目参考待核查，不算你错，本题不评分。你写的：' + esc(a.given) + '</div>'
   if (a.empty) {
     return '<div class="verdict bad">这次没想起来也没关系。先看一遍表达，再选择适合的复习间隔。</div>'
   }
@@ -1194,8 +1196,8 @@ export function buildChoices(word, kind, correct) {
   const pool = []
   S.state.cards.forEach((c) => {
     if (c.word_id === word.id) return
-    const w = S.wordOf(c)
-    if (!w) return
+    const w = S.learningWordOf(c)
+    if (!w || S.isBlockedWord(S.wordOf(c))) return
     if (kind === 'zh') {
       const sn = (w.payload && w.payload.senses) || []
       // 取该词的全部释义（不只第一条）：中文释义重复率高，只取第一条很容易凑不满选项
@@ -1330,11 +1332,17 @@ export function renderStudy() {
   }
 
   const card = session.queue[0]
-  const word = S.wordOf(card)
-  if (!word) {
+  const word = S.learningWordOf(card)
+  if (!word || S.isBlockedWord(S.wordOf(card))) {
+    if (word) session.total = Math.max(session.uniqueDone, session.total - 1)
     session.queue.shift()
+    session.shown = false; session.answered = null; session.options = null; session.choiceMode = false; session.assistShown = false
+    session.interactive = null; session.hinted = null; session.eventId = S.newEventId()
+    session.responseStartedAt = Date.now(); session.responseEndedAt = null
     return renderStudy()
   }
+
+  if (session.answered?.referenceInvalid) return '<h1>题目参考待核查</h1><div class="card"><p>这道题的参考用法有疑问，不算你错，也不计入本次评分或复习次数。</p><p>你写的：' + esc(session.answered.given) + '</p><button class="btn primary" id="study-skip-reference" style="min-height:44px;">跳过此题，继续学习</button></div>'
 
   const p = word.payload || {}
   const ipa = p.ipa && (p.ipa.uk || p.ipa.us)
@@ -1575,6 +1583,17 @@ export function renderStudy() {
 }
 
 export function bindStudy(go, onChanged) {
+  const skipReference = $('#study-skip-reference')
+  if (skipReference) skipReference.onclick = () => {
+    if (!session.answered?.referenceInvalid) return
+    const card = session.queue.shift()
+    if (card && !session.bonusIds.has(card.id) && !session.tries.has(card.id)) session.total = Math.max(session.uniqueDone, session.total - 1)
+    session.shown = false; session.answered = null; session.options = null; session.choiceMode = false; session.assistShown = false
+    session.interactive = null; session.hinted = null; session.cloze = null; session.clozeFb = null
+    session.eventId = S.newEventId(); session.responseStartedAt = Date.now(); session.responseEndedAt = null
+    session.cardShownAt = Date.now(); session.answerReadyAt = Date.now() + 350
+    onChanged()
+  }
   const exit = $('#study-exit')
   if (exit) exit.onclick = async () => {
     if (session.uniqueDone > 0 && !(await confirmDialog({
@@ -1629,7 +1648,7 @@ export function bindStudy(go, onChanged) {
   const say = $('#say-word')
   if (say) say.onclick = () => {
     const card = session.queue[0]
-    const w = card && S.wordOf(card)
+    const w = card && S.learningWordOf(card)
     const plan = session.say
     const text = (plan && plan.text) || (w && (w.lemma || w.normalized)) || ''
     if (!text) return
@@ -1706,6 +1725,7 @@ export function bindStudy(go, onChanged) {
       if (session.answered !== a || (S.state.user && S.state.user.id) !== ownerId) return
       a.reviewing = false
       a.reviewReason = res.reason
+      a.referenceInvalid = ['reference_invalid','reference_unknown'].includes(res.reason)
       a.feedback = res.feedback || null
       applyVerbal(a, res.verdict)
       onChanged()
@@ -1765,7 +1785,7 @@ export function bindStudy(go, onChanged) {
     const assist = $('#ans-assist')
     if (assist) assist.onclick = () => {
       const card = session.queue[0]
-      const w = card && S.wordOf(card)
+      const w = card && S.learningWordOf(card)
       if (!w) return
       if (!session.options) session.options = buildChoices(w, 'en', it0.expected)
       // 词库小的时候凑不出干扰项。必须当场说明 ——
@@ -1807,7 +1827,7 @@ export function bindStudy(go, onChanged) {
   if (mineGo) {
     mineGo.onclick = () => {
       const card = session.queue[0]
-      const w = card && S.wordOf(card)
+      const w = card && S.learningWordOf(card)
       const inp = $('#mine-in')
       const out = $('#mine-out')
       if (!w || !inp || !out) return
@@ -1868,7 +1888,7 @@ export function bindStudy(go, onChanged) {
     btn.onclick = async () => {
       const card = session.queue[0]
       let grade = Number(btn.dataset.g)
-      if (!card) return
+      if (!card || session.answered?.referenceInvalid || session.answered?.reviewing) return
       if (!S.isTestSession() && !S.dailyReviewAllowance()) { onChanged(); return }
       // 防误触：评分后页面会整块重绘，新按钮就位时用户的双击/连击可能正好落在
       // 下一张卡上 —— 新卡还没看就被评了分，还会被写进 FSRS。
@@ -1924,7 +1944,7 @@ export function bindStudy(go, onChanged) {
       session.hinted = null
       session.byGrade[grade] = (session.byGrade[grade] || 0) + 1
       if (grade <= 2) {
-        const w = S.wordOf(card)
+        const w = S.learningWordOf(card)
         if (w && !session.weak.some((x) => x.id === w.id)) {
           session.weak.push({ id: w.id, term: w.lemma || w.normalized })
         }
@@ -2834,10 +2854,10 @@ function openWordCorrection(word, onChanged, draft, draftSource) {
       const target = f.path.slice(0, -1).reduce((o, key) => o[key], payload)
       target[f.path.at(-1)] = value
     })
-    if (!changes.length) return fail('还没有修改内容')
-    if (auditEntry({ ...word, payload }).some(x => x.severity === 'blocking')) return fail('修正后仍没有可学习的释义或例句')
+    if (!changes.length && JSON.stringify(payload) === JSON.stringify(baseline.payload)) return fail('还没有修改内容')
+    if (auditEntry({ ...word, payload }).some(x => x.severity === 'blocking')) return fail('修正后仍有阻断问题，请核对释义、词性和例句')
     if (!(await confirmDialog({ title: '确认保存这些修正？', sub: '会保留原内容版本和学习进度。',
-      body: changes.map(c => '<p><b>' + esc(c.label) + '</b><br>原文：' + esc(c.before || '（空）') + '<br>修改：' + esc(c.after || '（空）') + '</p>').join(''), okText: '确认保存修正' }))) { openWordCorrection(word, onChanged, payload, source); return }
+      body: '<details><summary>完整原内容与修正内容（包含移除项）</summary><h4>原内容</h4><pre style="white-space:pre-wrap;overflow-wrap:anywhere;">' + esc(JSON.stringify(baseline.payload,null,2)) + '</pre><h4>修正内容</h4><pre style="white-space:pre-wrap;overflow-wrap:anywhere;">' + esc(JSON.stringify(payload,null,2)) + '</pre></details>' + changes.map(c => '<p><b>' + esc(c.label) + '</b><br>原文：' + esc(c.before || '（空）') + '<br>修改：' + esc(c.after || '（空）') + '</p>').join(''), okText: '确认保存修正' }))) { openWordCorrection(word, onChanged, payload, source); return }
     try {
       await S.correctWord(baseline, payload, source)
       closeModal(); onChanged(true); ok('修正已保存，学习进度保留')
@@ -3401,6 +3421,7 @@ function reviewHint() {
   const st = reviewStatus()
   if (!st) return '未开始'
   if (st.running) return st.pauseRequested ? '正在暂停' : '进行中'
+  if (st.ruleVersion !== REVIEW_VERSION) return '新规则待复核'
   if (st.lastError) return '需重试'
   return st.done >= st.total ? '已完成' : '可继续'
 }
@@ -3412,6 +3433,7 @@ function reviewProgressHTML() {
   const label = st.running ? (st.pauseRequested ? '正在暂停 ' : '复核中 ') :
     st.lastError ? '复核中断 ' : st.done >= st.total ? '已完成 ' : '已暂停 '
   return '<div class="tiny" role="status" aria-live="polite" style="margin:0 0 10px;line-height:1.7;">' +
+    (st.ruleVersion !== REVIEW_VERSION ? '这是旧规则的历史进度；下次启动将按新规则重新检查，尚未自动调用模型。<br>' : '') +
     label + st.done + ' / ' + st.total + ' 个词条（' + pct + '%，已处理）' +
     (st.current ? '　·　' + esc(st.current) : '') + '<br>' +
     '模型复核 ' + st.reviewed + ' 条，规则检查完成 ' + st.rules + ' 条<br>' +
@@ -3434,8 +3456,11 @@ function reviewJobRunning() {
 function reviewPanelHTML() {
   const st = reviewStatus()
   const running = !!(st && st.running)
-  const resume = st && !running && st.done < st.total
-  return reviewProgressHTML() + '<div class="btn-group">' +
+  const resume = st && st.ruleVersion === REVIEW_VERSION && !running && st.done < st.total
+  const suspects = S.state.words.filter(w => assessContent(w).issues.length)
+  return '<details class="content-quality-scan"><summary style="min-height:44px;cursor:pointer;">参考用法检查：' + suspects.length + ' / ' + S.state.words.length + ' 个已加载词条需核对</summary><p class="tiny">本地规则检查，不调用 AI，不代表全库权威核验。问题义项和搭配已暂不用于练习；原文保留供核对。其他正确内容照常学习。</p>' +
+    suspects.slice(0, 30).map(w => '<button class="btn sm" data-quality-word="' + w.id + '" style="min-height:44px;margin:4px;">核对 ' + esc(w.lemma || w.normalized) + '</button>').join('') +
+    (suspects.length > 30 ? '<p>仅列出前 30 个，请修正后继续检查。</p>' : '') + '</details>' + reviewProgressHTML() + '<div class="btn-group">' +
     '<button class="btn' + (running ? '' : ' primary') + '" id="me-review-learned"' +
     (running ? ' disabled' : '') + '>' + (resume && st.scope === 'learned' ? '继续复核已学词条' : '复核已学词条') + '</button>' +
     '<button class="btn" id="me-review-all"' + (running ? ' disabled' : '') + '>' +
@@ -3445,6 +3470,12 @@ function reviewPanelHTML() {
 }
 
 function bindReviewControls(onChanged) {
+  $$('[data-quality-word]').forEach(btn => { btn.onclick = () => {
+    const w = S.state.words.find(w => String(w.id) === btn.dataset.qualityWord)
+    if (!w) return
+    const draft = repairDraft(w)
+    openWordCorrection(w, onChanged, draft?.payload, draft?.source)
+  } })
   for (const scope of ['learned', 'all']) {
     const btn = $('#me-review-' + scope)
     if (btn) btn.onclick = () => {
@@ -4146,8 +4177,8 @@ function openExport() {
     if (deck) list = list.filter((c) => c.deck === deck)
 
     const items = list
-      .map((c) => ({ card: c, word: S.wordOf(c) }))
-      .filter((x) => x.word)
+      .map((c) => ({ card: c, word: S.learningWordOf(c) }))
+      .filter((x) => x.word && !S.isBlockedWord(S.wordOf(x.card)))
 
     if (!items.length) return fail('该范围内没有词条')
 

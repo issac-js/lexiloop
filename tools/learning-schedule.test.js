@@ -465,7 +465,7 @@ test('production review receives the Chinese meaning shown in the actual study q
   S.state.words[0].lemma = 'handle'; S.state.words[0].payload.senses[0].def_zh = '处理问题';
   const C = await load('cloud.js'); let sent;
   C.getCloud().llm = {models:{list:async()=>[{id:'deepseek-v4.1-flash'}]},chat:{completions:{create:async function* (params) {
-    sent = params; yield {choices:[{delta:{content:'{"verdict":"alt"}'},finish_reason:'stop'}]};
+    sent = params; yield {choices:[{delta:{content:'{"reference":"valid","reference_reason":"","verdict":"alt"}'},finish_reason:'stop'}]};
   }}}};
   const go = {}, input = {value:'address',focus(){}};
   globalThis.document = {querySelector:selector=>selector==='#ans-go'?go:selector==='#ans-in'?input:null,querySelectorAll:()=>[]};

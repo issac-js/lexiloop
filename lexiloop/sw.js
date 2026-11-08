@@ -12,17 +12,18 @@
  * 因此把它加进离线壳 —— 断网时连云客户端初始化都能起来（数据同步延后）。
  * 同时把跨域豁免从「CDN 一律不碰」收窄为「非同源一律不碰」，语义更准确。
  */
-const CACHE = 'lexiloop-shell-v130'
+const CACHE = 'lexiloop-shell-v131'
 const SHELL = [
   './',
   './index.html',
-  './styles.css?v=130',
+  './styles.css?v=131',
   './manifest.webmanifest',
   './icon.svg',
   './vendor/workbuddy-cloud-sdk.js',
-  './js/focus.js?v=130',
-  './js/focus-core.js?v=130',
-  './js/transfer.js?v=130',
+  './js/content-quality.js?v=131',
+  './js/focus.js?v=131',
+  './js/focus-core.js?v=131',
+  './js/transfer.js?v=131',
 ]
 
 // 安装时**不**自动 skipWaiting：旧壳还在给当前页面供资源时被新壳顶替，

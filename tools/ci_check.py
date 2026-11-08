@@ -57,6 +57,7 @@ def main():
     run('node', '--test', 'tools/live-checks.test.js')
     run('node', '--test', 'tools/learning-schedule.test.js')
     run('node', '--test', 'tools/focus-practice.test.js')
+    run('node', '--test', 'tools/content-quality.test.js')
     run('node', '--test', 'tools/content-review.test.js')
     run('node', '--test', 'tools/content-report.test.js')
     # Import without writing __pycache__ into the served directory.

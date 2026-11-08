@@ -91,7 +91,7 @@ test('actual v108 syncPull handles rollover without a settings POST and reads st
     const previousStorage = globalThis.localStorage;
     try {
       fs.writeFileSync(path.join(dir, 'package.json'), '{"type":"module"}');
-      for (const name of ['store.js', 'config.js', 'fsrs.js', 'goal-metrics.js']) {
+      for (const name of ['store.js', 'config.js', 'fsrs.js', 'goal-metrics.js', 'content-quality.js']) {
         fs.copyFileSync(path.join(__dirname, '../lexiloop/js', name), path.join(dir, name));
       }
       fs.writeFileSync(path.join(dir, 'cloud.js'), 'export function db(){return globalThis.__lexiloopStartup.db;} export async function getSession(){return null;}');

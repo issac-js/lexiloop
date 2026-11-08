@@ -50,9 +50,12 @@ test('timeouts abort requests and late model replies cannot write or advance pro
  S.state.cards=[{word_id:1,reps:1}];const task=V.startReview('all');await until(()=>E.requests.length===1);expire();await task;
  assert.ok(E.requests[0].opts.signal.aborted);assert.match(V.reviewStatus().lastError,/2 分钟/);E.requests[0].resolve({...good,severity:'blocking'});await tick();assert.equal(db.writes,0);assert.equal(V.reviewStatus().done,0);
 }));
-test('legacy cursor migrates to account scope without inventing successful review counts',()=>fixture(async({V,E,good,until,storage,key})=>{
- assert.equal(V.reviewStatus().done,2);assert.equal(V.reviewStatus().previousDone,2);const task=V.startReview('all');await until(()=>E.requests.length===1);assert.equal(E.requests[0].entry.term,'word3');E.requests[0].resolve(good);await task;
- assert.equal(V.reviewStatus().reviewed,1);assert.ok(storage.has(key()));assert.equal(storage.has('lexiloop.reviewJob'),false);
+test('legacy progress is visible but a new rules version must recheck all words on explicit start',()=>fixture(async({V,E,good,until,storage,key,C})=>{
+ assert.equal(V.reviewStatus().done,2);assert.equal(V.reviewStatus().previousDone,2);assert.match(V.renderMe(),/旧规则的历史进度/);
+ assert.equal(E.requests.length,0);const task=V.startReview('all');await until(()=>E.requests.length===2);
+ E.requests.slice().forEach(r=>r.resolve(good));await until(()=>E.requests.length===3);E.requests[2].resolve(good);await task;
+ assert.equal(V.reviewStatus().reviewed,3);assert.equal(V.reviewStatus().ruleVersion,C.REVIEW_VERSION);
+ assert.deepEqual(E.requests.map(r=>r.entry.term).sort(),['word1','word2','word3']);assert.ok(storage.has(key()));assert.equal(storage.has('lexiloop.reviewJob'),false);
 },{scope:'all',ids:[1,2,3],cursor:2,blocking:1,advisory:1}));
 test('content changes invalidate the report; user corrections arriving during review are protected',()=>fixture(async({S,V,E,good,until})=>{
  S.state.cards=[{word_id:1,reps:1}];let task=V.startReview('all');await until(()=>E.requests.length===1);E.requests[0].resolve(good);await task;
@@ -75,4 +78,15 @@ test('correction saves a before-version and source, preserves all cards, and rej
 test('account switch prevents an in-flight result from writing to the next account',()=>fixture(async({S,V,E,good,until,db,storage})=>{
  S.state.cards=[{word_id:1,reps:1}];const task=V.startReview('all');await until(()=>E.requests.length===1);S.state.user={id:'other-account'};E.requests[0].resolve(good);await task;
  assert.equal(db.writes,0);assert.equal(storage.has('lexiloop.reviewJob.other-account'),false);
+}));
+
+test('new model review can replace a previous quarantine without treating its own report as a local rule',()=>fixture(async({S,V,E,good,until,C})=>{
+ S.state.cards=[{word_id:1,reps:1}];const w=S.state.words[0];
+ const fingerprint=await C.contentFingerprint(w);
+ const report=C.makeReport(w,fingerprint,'auto',{severity:'advisory',issues:['Bad example'],quarantinedCollocations:[0]},[]);
+ w.verification_status='reviewed';w.verify_note=JSON.stringify(report);
+ assert.equal(C.auditEntry(w).length,0);
+ report.at=0;w.verify_note=JSON.stringify(report);
+ const task=V.startReview('all');await until(()=>E.requests.length===1);E.requests[0].resolve(good);await task;
+ assert.deepEqual(C.parseReviewReport(S.state.words[0].verify_note).quarantinedCollocations,[]);
 }));

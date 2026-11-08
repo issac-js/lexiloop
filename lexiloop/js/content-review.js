@@ -1,5 +1,6 @@
 /** Content reports and a resumable, two-worker foreground queue. No credentials or DOM. */
-export const REVIEW_VERSION = 'content-v2'
+import { assessContent, contentKey, REPORT_VERSION } from './content-quality.js?v=131'
+export const REVIEW_VERSION = REPORT_VERSION
 export const REVIEW_TIMEOUT_MS = 120000
 export const REVIEW_CACHE_DAYS = 30
 
@@ -34,6 +35,8 @@ export function auditEntry(word) {
     seen.add(pattern)
     if (!c || !(c.examples || []).some(e => e && e.en)) issues.push({ severity: 'advisory', field: 'collocations.' + i, message: '第 ' + (i + 1) + ' 条搭配缺少英文例句。' })
   })
+  const quality = assessContent({ ...word, verify_note:'' })
+  quality.issues.forEach(message => issues.push({ severity:quality.blocked ? 'blocking' : 'advisory', field:'reference', message }))
   return issues
 }
 
@@ -42,7 +45,9 @@ export function makeReport(word, fingerprint, model, result, localIssues, now = 
   const severity = localIssues.some(x => x.severity === 'blocking') || result.severity === 'blocking' ? 'blocking' :
     issues.length || result.severity === 'advisory' ? 'advisory' : 'none'
   return { kind: 'lexiloop-content-report', version: REVIEW_VERSION, fingerprint, model, at: now,
-    severity, issues: issues.slice(0, 30).map(x => String(x).slice(0, 500)),
+    severity, contentKey:contentKey(word),
+    quarantinedCollocations: [...new Set((result.quarantinedCollocations || []).filter(i => Number.isInteger(i) && i >= 0 && i < (word.payload?.collocations || []).length))],
+    issues: issues.slice(0, 30).map(x => String(x).slice(0, 500)),
     suggestions: (result.suggestions || []).slice(0, 20).map(x => String(x).slice(0, 500)),
     reason: String(result.reason || '').slice(0, 500), source: result.source || 'model',
     reference: '模型建议未经权威来源核实；修正前请核对词典或原始语料。' }
@@ -87,8 +92,8 @@ export function createReviewRunner(deps) {
     if (job && job.running) { if (job.owner !== deps.owner()) throw Error('原账号的任务正在停止，请稍后重试。'); return }
     const owner = deps.owner()
     model = model || 'auto'
-    if (!job || job.scope !== scope || job.done >= job.ids.length || job.model !== model) {
-      job = normalize({ owner, scope, ids: [...new Set(ids)], completed: [], model })
+    if (!job || job.scope !== scope || job.done >= job.ids.length || job.model !== model || job.ruleVersion !== REVIEW_VERSION) {
+      job = normalize({ owner, scope, ids: [...new Set(ids)], completed: [], model, ruleVersion:REVIEW_VERSION })
     }
     const j = job, completed = doneIds(), claimed = new Set()
     j.running = true; j.pauseRequested = false; j.lastError = ''

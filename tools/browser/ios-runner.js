@@ -97,6 +97,18 @@ trigger.onclick = async () => {
     assert(JSON.stringify(window.__QA.snapshot()) === before, 'Pilot modified learning');
     await tap('#transfer-home');
   });
+  await check('question reference rejection skips without writing review or scheduling', async () => {
+    await reset('coaching'); window.__reviewMock.mode = 'reference-invalid';
+    const before=JSON.stringify(window.__QA.snapshot().cards);
+    await tap('#start-study'); document.querySelector('#ans-in').value='deserve'; await tap('#ans-go');
+    for(let i=0;i<50&&!document.querySelector('#study-skip-reference');i++) await wait(100);
+    assert(document.querySelector('#study-skip-reference'),'Missing ungraded skip');
+    assert(!document.querySelector('[data-g]'),'Unsafe reference still has grading buttons');
+    await tap('#study-skip-reference');
+    assert(JSON.stringify(window.__QA.snapshot().cards)===before,'Scheduling changed on skip');
+    assert(window.__QA.snapshot().reviews.length===0 && S.dailyReviewed()===0,'Skip consumed a review');
+    await reset('normal');
+  });
   await check('specific inflection coaching and correction stay reachable without duplicate review', async () => {
     await reset('coaching'); window.__reviewMock.mode = 'coaching';
     await tap('#start-study');

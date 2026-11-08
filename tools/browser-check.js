@@ -57,6 +57,36 @@ async function main() {
           if (measure.coarse) for (const label of measure.labels) assert.ok(label.height >= 44, 'small touch target: ' + JSON.stringify(label));
           return measure;
         };
+        await check('unsafe reference skips without FSRS, review or quota writes', async () => {
+          await open('coaching'); await page.evaluate(() => { window.__reviewMock.mode = 'reference-invalid'; });
+          const before = await page.evaluate(() => JSON.stringify(window.__QA.snapshot().cards));
+          await tab('today'); await page.locator('#start-study').click();
+          await page.locator('#ans-in').fill('deserve'); await page.locator('#ans-go').click();
+          await page.locator('#study-skip-reference').waitFor();
+          assert.equal(await page.locator('[data-g]').count(),0);
+          assert.equal(await page.locator('#study-details').count(),0);
+          await page.locator('#study-skip-reference').click();
+          assert.equal(await page.evaluate(() => window.__QA.snapshot().reviews.length),0);
+          assert.equal(await page.evaluate(() => JSON.stringify(window.__QA.snapshot().cards)),before);
+          const reviewed=await page.evaluate(async v => (await import('./js/store.js?v='+v)).dailyReviewed(), VERSION);
+          assert.equal(reviewed,0); await layout();
+        });
+        await check('quality scan offers sourced liver repair with complete preview and preserves scheduling', async () => {
+          await open('quality'); await tab('me');
+          const before = await page.evaluate(() => JSON.stringify(window.__QA.snapshot().cards));
+          const scan=page.locator('.content-quality-scan'); await scan.locator('summary').click();
+          await page.locator('[data-quality-word="1"]').click();
+          assert.match(await page.locator('#word-fix-source').inputValue(),/oxfordlearnersdictionaries/);
+          await page.locator('#word-fix-preview').click();
+          assert.match(await page.locator('.modal').innerText(),/完整原内容与修正内容/);
+          await page.locator('[data-x=yes]').click();
+          await page.waitForFunction(() => window.__QA.snapshot().words[0].verification_status === 'corrected');
+          const row=await page.evaluate(() => window.__QA.snapshot().words[0]);
+          assert.equal(row.payload.senses[0].pos,'noun'); assert.equal(row.payload.correction_history.length,1);
+          assert.equal(await page.evaluate(() => JSON.stringify(window.__QA.snapshot().cards)),before);
+          assert.equal(await page.evaluate(() => window.__QA.snapshot().reviews.length),0);
+          await layout();
+        });
         await check('cloze inflection feedback preserves verdict and shows safe full-sentence evidence', async () => {
           await open();
           const result = await page.evaluate(async v => {

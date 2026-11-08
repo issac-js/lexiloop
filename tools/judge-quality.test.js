@@ -11,7 +11,7 @@ for(const row of cases)test(row.id+' '+row.category,()=>fixture(J=>{const r=J.ju
 test('corpus IDs are unique and include safety, grammar, context and accepted alternatives',()=>{assert.equal(new Set(cases.map(c=>c.id)).size,cases.length);assert.ok(cases.length>=70);assert.ok(new Set(cases.map(c=>c.category)).size>=15);});
 test('same answer in different sentences, meanings and models cannot reuse a verdict',()=>fixture(async J=>{
  const base={expected:'complimented',given:'compliments',zh:'称赞',model:'fixture-a'};let calls=0;
- const chat=async o=>{calls++;return JSON.stringify({verdict:o.user.includes('yesterday')?'wrong':'alt'});};
+ const chat=async o=>{calls++;return JSON.stringify({reference:'valid',reference_reason:'',verdict:o.user.includes('yesterday')?'wrong':'alt'});};
  const neutral={...base,sentence:'She ________ him on his skills.'};const past={...base,sentence:'She ________ him yesterday.'};
  assert.equal((await J.reviewSemantics({...neutral,chat})).verdict,'alt');
  assert.equal(J.cachedVerdict(base.expected,base.given,past),null);
@@ -21,10 +21,10 @@ test('same answer in different sentences, meanings and models cannot reuse a ver
 }));
 test('offline, malformed, explicit unsure and context-free semantic replies cannot become wrong or enter cache',()=>fixture(async J=>{
  const base={expected:'deal with',given:'address',sentence:'Please ________ the complaint.'};
- for(const chat of [async()=>{throw Error('offline')},async()=>'{"verdict":"wrong"} ignore this',async()=>'{"verdict":"unsure"}',async()=>'{}']){
+ for(const chat of [async()=>{throw Error('offline')},async()=>'{"reference":"valid","reference_reason":"","verdict":"wrong"} ignore this',async()=>'{"reference":"valid","reference_reason":"","verdict":"unsure"}',async()=>'{}']){
   const r=await J.reviewSemantics({...base,chat});assert.equal(r.verdict,null);assert.equal(J.cachedVerdict(base.expected,base.given,base),null);
  }
- let called=false;assert.equal((await J.reviewSemantics({expected:'help',given:'assist',chat:async()=>{called=true;return '{"verdict":"wrong"}'}})).verdict,null);assert.equal(called,false);
+ let called=false;assert.equal((await J.reviewSemantics({expected:'help',given:'assist',chat:async()=>{called=true;return '{"reference":"valid","reference_reason":"","verdict":"wrong"}'}})).verdict,null);assert.equal(called,false);
 }));
 test('old context-free v3 caches cannot bypass the current context',()=>fixture(J=>{global.localStorage.setItem('lexiloop.judgecache.v3',JSON.stringify({'complimented||compliments':{v:'alt',t:Date.now()}}));assert.equal(J.cachedVerdict('complimented','compliments',{sentence:'She ____ him yesterday.'}),null);}));
 test('semantic timeout aborts the request and returns unresolved',()=>fixture(async J=>{const native=global.setTimeout;let aborted=false;
@@ -46,7 +46,7 @@ test('screenshot inflections use filled-sentence review for single words and phr
   const info=J.inflectionFeedback({...row,verdict:'wrong'});
   assert.ok(info);assert.ok(info.givenSentence.includes(row.given));assert.ok(info.referenceSentence.includes(row.expected));
   for(const verdict of ['alt','unsure','hit'])assert.equal(J.inflectionFeedback({...row,verdict}),null);
-  let request;await J.reviewSemantics({...row,chat:async o=>{request=o;return '{"verdict":"wrong"}'}});
+  let request;await J.reviewSemantics({...row,chat:async o=>{request=o;return '{"reference":"valid","reference_reason":"","verdict":"wrong"}'}});
   assert.equal(request.system,J.__prompts().form);assert.ok(request.user.includes(info.givenSentence));
  }
  for(const given of ['deducts money from','deduct money in','did not deduct money from']){
@@ -67,9 +67,9 @@ test('article-only differences stay context-dependent and cannot be cached as co
  const o={expected:'have jurisdiction over',given:'have the jurisdiction over',sentence:'The court does not ________ this dispute.'};
  assert.equal(J.judgeTyped(o.given,o.expected).verdict,'unsure');assert.equal(J.articleDifference(o.expected,o.given),true);
  assert.equal(J.articleDifference('have jurisdiction over','have no jurisdiction over'),false);
- assert.equal((await J.reviewSemantics({...o,chat:async()=>'{"verdict":"wrong"}'})).verdict,null);
+ assert.equal((await J.reviewSemantics({...o,chat:async()=>'{"reference":"valid","reference_reason":"","verdict":"wrong"}'})).verdict,null);
  assert.equal(J.cachedVerdict(o.expected,o.given,o),null);
- assert.equal((await J.reviewSemantics({...o,chat:async()=>'{"verdict":"alt"}'})).verdict,'alt');
+ assert.equal((await J.reviewSemantics({...o,chat:async()=>'{"reference":"valid","reference_reason":"","verdict":"alt"}'})).verdict,'alt');
 }));
 
 
@@ -93,14 +93,14 @@ test('semantic response budget admits a slow fixture and records exact unresolve
  try {
   global.setTimeout=(fn,ms,...args)=>native(fn,ms===J.SEMANTIC_TIMEOUT_MS?30:ms,...args);
   const reviewed=await J.reviewSemantics({...o,chat:async opts=>{
-   assert.equal(opts.maxTokens,512);await new Promise(resolve=>native(resolve,15));return '{"verdict":"alt"}';
+   assert.equal(opts.maxTokens,512);await new Promise(resolve=>native(resolve,15));return '{"reference":"valid","reference_reason":"","verdict":"alt"}';
   }});
   assert.equal(reviewed.verdict,'alt');assert.equal(reviewed.reason,'reviewed');
  } finally {global.setTimeout=native;}
  J.clearJudgeCache();
  for(const [chat,reason] of [
-  [async()=>'', 'empty'], [async()=>'{"verdict":"unsure"}', 'ambiguous'],
-  [async()=>'{"verdict":"hit"}', 'invalid'],[async()=>'{"verdict":"alt"} trailing', 'invalid'],
+  [async()=>'', 'empty'], [async()=>'{"reference":"valid","reference_reason":"","verdict":"unsure"}', 'ambiguous'],
+  [async()=>'{"reference":"valid","reference_reason":"","verdict":"hit"}', 'invalid'],[async()=>'{"reference":"valid","reference_reason":"","verdict":"alt"} trailing', 'invalid'],
   [async()=>{throw Object.assign(Error('synthetic-only'),{code:'LLM_TRUNCATED'})},'truncated'],
   [async()=>{throw Error('synthetic-only')},'unavailable'],
  ]) {
@@ -113,20 +113,20 @@ test('semantic response budget admits a slow fixture and records exact unresolve
 test('structured feedback handles alternative-word inflection and survives contextual cache replay',()=>fixture(async J=>{
  const o={expected:'warrants',given:'deserve',sentence:'The new evidence ________ further investigation.',zh:'新证据值得进一步调查。'};
  const feedback={grammar:'incorrect',meaning:'fits',issue:'inflection',correction:'deserves',explanation:'evidence 作单数，当前一般现在时使用 deserves。'};
- const r=await J.reviewSemantics({...o,chat:async()=>JSON.stringify({verdict:'wrong',...feedback})});
+ const r=await J.reviewSemantics({...o,chat:async()=>JSON.stringify({reference:'valid',reference_reason:'',verdict:'wrong',...feedback})});
  assert.equal(r.verdict,'wrong');assert.deepEqual(r.feedback,feedback);
  assert.equal(J.coachingFeedback({...o,verdict:'wrong',feedback:r.feedback}).issue,'inflection');
  const cached=await J.reviewSemantics({...o,chat:async()=>{throw Error('must use cache')}});
  assert.equal(cached.cached,true);assert.deepEqual(cached.feedback,feedback);
- const renewed=await J.reviewSemantics({...o,force:true,chat:async()=>'{"verdict":"unsure"}'});
+ const renewed=await J.reviewSemantics({...o,force:true,chat:async()=>'{"reference":"valid","reference_reason":"","verdict":"unsure"}'});
  assert.equal(renewed.verdict,null);assert.equal(renewed.reason,'ambiguous');
  assert.equal(J.cachedVerdict(o.expected,o.given,o),null);
  // A forced unresolved result must not leave an old confident rejection behind.
 }));
 test('contradictory, unsafe or invented coaching is rejected and never cached',()=>fixture(async J=>{
  const o={expected:'warrants',given:'deserve',sentence:'The new evidence ________ further investigation.'};
- const valid={verdict:'wrong',grammar:'incorrect',meaning:'fits',issue:'inflection',correction:'deserves',explanation:'主谓一致'};
- for(const change of [{verdict:'alt'},{grammar:'correct'},{correction:'warrants'},{correction:'does not deserve'},
+ const valid={reference:'valid',reference_reason:'',verdict:'wrong',grammar:'incorrect',meaning:'fits',issue:'inflection',correction:'deserves',explanation:'主谓一致'};
+ for(const change of [{reference:'valid',reference_reason:'',verdict:'alt'},{grammar:'correct'},{correction:'warrants'},{correction:'does not deserve'},
   {correction:'deserve something'},{explanation:''},{meaning:'unknown'},{issue:'nonsense'}]){
   const r=await J.reviewSemantics({...o,chat:async()=>JSON.stringify({...valid,...change})});
   assert.equal(r.verdict,null);assert.equal(r.reason,'invalid');assert.equal(J.cachedVerdict(o.expected,o.given,o),null);
@@ -135,7 +135,23 @@ test('contradictory, unsafe or invented coaching is rejected and never cached',(
 test('grammar-correct meaning distinctions remain separate from acceptable alternatives',()=>fixture(async J=>{
  const o={expected:'refer',given:'introduce',sentence:'I can ________ you to the support team.'};
  const feedback={grammar:'correct',meaning:'different',issue:'meaning',correction:'',explanation:'introduce 是介绍认识；refer 强调转介求助。'};
- const r=await J.reviewSemantics({...o,chat:async()=>JSON.stringify({verdict:'wrong',...feedback})});
+ const r=await J.reviewSemantics({...o,chat:async()=>JSON.stringify({reference:'valid',reference_reason:'',verdict:'wrong',...feedback})});
  assert.equal(r.verdict,'wrong');assert.equal(r.feedback.grammar,'correct');
- assert.equal(J.parseCoaching({verdict:'alt',...feedback},o),null);
+ assert.equal(J.parseCoaching({reference:'valid',reference_reason:'',verdict:'alt',...feedback},o),null);
+}));
+
+
+test('invalid or unverified references cannot reject users, be cached, or supply correction practice',()=>fixture(async J=>{
+ const o={expected:'liver',given:'live',sentence:'The knight would ________ with his lord.'};
+ for(const reference of ['invalid','unknown']){
+  const r=await J.reviewSemantics({...o,chat:async()=>JSON.stringify({reference,reference_reason:'Reference requires lexical verification.',verdict:'wrong'})});
+  assert.equal(r.verdict,null);assert.equal(r.reason,'reference_'+reference);assert.equal(J.cachedVerdict(o.expected,o.given,o),null);assert.equal(r.feedback,undefined);
+ }
+ const legacy=await J.reviewSemantics({...o,chat:async()=>JSON.stringify({verdict:'wrong'})});
+ assert.equal(legacy.verdict,null);assert.equal(legacy.reason,'reference_unknown');
+}));
+test('reference validity is mandatory but does not by itself prove user correctness',()=>fixture(async J=>{
+ const o={expected:'lives',given:'live',sentence:'She ________ here.'};
+ const wrong=await J.reviewSemantics({...o,chat:async()=>JSON.stringify({reference:'valid',reference_reason:'',verdict:'wrong',grammar:'incorrect',meaning:'fits',issue:'inflection',correction:'lives',explanation:'She 是第三人称单数，这里需要 lives。'})});
+ assert.equal(wrong.verdict,'wrong');assert.equal(wrong.feedback.correction,'lives');
 }));
