@@ -35,7 +35,7 @@ export function auditEntry(word) {
     seen.add(pattern)
     if (!c || !(c.examples || []).some(e => e && e.en)) issues.push({ severity: 'advisory', field: 'collocations.' + i, message: '第 ' + (i + 1) + ' 条搭配缺少英文例句。' })
   })
-  const quality = assessContent(word)
+  const quality = assessContent({ ...word, verify_note:'' })
   quality.issues.forEach(message => issues.push({ severity:quality.blocked ? 'blocking' : 'advisory', field:'reference', message }))
   return issues
 }

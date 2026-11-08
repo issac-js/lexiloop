@@ -76,3 +76,14 @@ test('account switch prevents an in-flight result from writing to the next accou
  S.state.cards=[{word_id:1,reps:1}];const task=V.startReview('all');await until(()=>E.requests.length===1);S.state.user={id:'other-account'};E.requests[0].resolve(good);await task;
  assert.equal(db.writes,0);assert.equal(storage.has('lexiloop.reviewJob.other-account'),false);
 }));
+
+test('new model review can replace a previous quarantine without treating its own report as a local rule',()=>fixture(async({S,V,E,good,until,C})=>{
+ S.state.cards=[{word_id:1,reps:1}];const w=S.state.words[0];
+ const fingerprint=await C.contentFingerprint(w);
+ const report=C.makeReport(w,fingerprint,'auto',{severity:'advisory',issues:['Bad example'],quarantinedCollocations:[0]},[]);
+ w.verification_status='reviewed';w.verify_note=JSON.stringify(report);
+ assert.equal(C.auditEntry(w).length,0);
+ report.at=0;w.verify_note=JSON.stringify(report);
+ const task=V.startReview('all');await until(()=>E.requests.length===1);E.requests[0].resolve(good);await task;
+ assert.deepEqual(C.parseReviewReport(S.state.words[0].verify_note).quarantinedCollocations,[]);
+}));

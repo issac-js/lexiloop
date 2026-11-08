@@ -1336,6 +1336,9 @@ export function renderStudy() {
   if (!word || S.isBlockedWord(S.wordOf(card))) {
     if (word) session.total = Math.max(session.uniqueDone, session.total - 1)
     session.queue.shift()
+    session.shown = false; session.answered = null; session.options = null; session.choiceMode = false; session.assistShown = false
+    session.interactive = null; session.hinted = null; session.eventId = S.newEventId()
+    session.responseStartedAt = Date.now(); session.responseEndedAt = null
     return renderStudy()
   }
 
