@@ -1092,7 +1092,7 @@ const REG_ZH = { formal: '正式', neutral: '中性', spoken: '口语', informal
  */
 function correctionPracticeHTML(a, o) {
   if (!o.retry) return ''
-  return '<details class="feedback-detail"><summary>试着修正一次（可选）</summary>' +
+  return '<details class="feedback-detail"' + (a.practiceChecked ? ' open' : '') + '><summary>试着修正一次（可选）</summary>' +
     '<p class="tiny">这是看反馈后的巩固练习，不改首次判定，不额外写入评分。</p>' +
     '<label for="ans-practice">修改后的填空内容</label><input class="input" id="ans-practice" maxlength="160" value="' + esc(a.practiceText || '') + '">' +
     '<button class="btn" id="ans-practice-check" style="margin-top:8px;min-height:44px;">核对这次修正</button>' +
