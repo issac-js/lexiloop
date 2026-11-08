@@ -854,11 +854,11 @@ function bindDict(cb) {
       const inp = $('#dict-in')
       if (d.answered) return                    // 双击/回车连发只算一次
       const given = inp ? inp.value : ''
-      const r = judgeTyped(given, meta.expected, { spelling: !!meta.spell })
+      const r = judgeTyped(given, meta.expected, { spelling: !!meta.spell, sentence:meta.sentence, zh:meta.zh })
       const ms = Math.max(0, Date.now() - (d.qStart || Date.now()))
       d.answered = {
         ok: r.ok, verdict: r.verdict, typo: r.typo, loose: r.loose,
-        empty: r.empty, given: given, expected: meta.expected, kind: 'type', sentence:meta.sentence || '',
+        empty: r.empty, given: given, expected: meta.expected, kind: 'type', sentence:meta.sentence || '', note:r.note || '',
       }
       d.results = (d.results || []).concat([{
         id: q.id, ok: r.ok, verdict: r.verdict, ms: ms,

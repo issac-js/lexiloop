@@ -23,7 +23,7 @@
 
 /* v3：词形变体改用"代入式语法判断"专用提示词 —— 旧问法实测会波动
    （同一用例 8 次采样 7 次对、1 次错），旧缓存里的结论不能重放。 */
-const LS_CACHE = 'lexiloop.judgecache.v9'
+const LS_CACHE = 'lexiloop.judgecache.v10'
 const CACHE_MAX = 400
 export const SEMANTIC_TIMEOUT_MS = 12000
 export const SEMANTIC_MAX_TOKENS = 512
@@ -102,7 +102,32 @@ export const UNSURE = 'unsure'
 const reviewedClozeAlternatives = [
   ['She managed to ________ the technical problem.', 'work through', 'resolve'],
   ['The owner was forced to ________ his business after the lease expired.', 'shutter', 'shut down'],
+  ['The ________ team coordinates maintenance and events across all buildings.', 'campus operations', 'campus operation',
+    '已表达校园运营的意思。部门或团队名称通常用 campus operations team；这里是惯用搭配提示，不等于整条没记住。'],
 ]
+
+// Meaning-based production prompts may omit number. Do not infer it from the reference.
+export function numberOnlyDifference(expected, given) {
+  const e=normalizeAns(expected).split(' '), g=normalizeAns(given).split(' ')
+  if(e.length!==g.length || e.length>6) return null
+  const changes=e.map((x,i)=>x===g[i]?-1:i).filter(i=>i>=0)
+  if(changes.length!==1) return null
+  const i=changes[0], a=e[i], b=g[i]
+  const plural=(one,many)=>one.length>=3 && (many===one+'s' ||
+    (/(?:s|x|z|ch|sh)$/.test(one) && many===one+'es') ||
+    (/[b-df-hj-np-tv-z]y$/.test(one) && many===one.slice(0,-1)+'ies'))
+  return plural(a,b)||plural(b,a) ? {index:i,expected:a,given:b} : null
+}
+const quantitySpecified = zh => /[0-9一二三四五六七八九十两几每各]|所有|全部|若干|许多|大量|一些|单数|复数|多项|多种/.test(String(zh||''))
+function reviewedNumberAlternative(given, expected, o) {
+  if(o.sentence || !o.zh || quantitySpecified(o.zh)) return null
+  const pair=numberOnlyDifference(expected,given)
+  // Cambridge: amenity is countable, usually plural, rather than plural-only.
+  // Other nouns remain contextual; this does not strip s from operations/customs/news.
+  if(!pair || pair.index!==normalizeAns(expected).split(' ').length-1 ||
+      ![pair.expected,pair.given].every(x=>['amenity','amenities'].includes(x))) return null
+  return '这里没有限定设施数量，hotel amenity 可指一项酒店设施；泛指多项设施时常用 hotel amenities。'
+}
 
 export function judgeTyped(given, expected, opts) {
   const o = opts || {}
@@ -125,9 +150,13 @@ export function judgeTyped(given, expected, opts) {
     const accepted = normalizeAns(answer)
     if (accepted && (g === accepted || equivalent(g, accepted))) return result(ALT)
   }
-  if (!o.locked && !o.spelling && o.sentence && reviewedClozeAlternatives.some(
-    ([sentence, target, answer]) => sentence === o.sentence.trim() && target === e && answer === g
-  )) return result(ALT)
+  if (!o.locked && !o.spelling) {
+    const numberNote=reviewedNumberAlternative(given,expected,o)
+    if(numberNote) return {...result(ALT),note:numberNote}
+    const known=o.sentence && reviewedClozeAlternatives.find(
+      ([sentence,target,answer])=>sentence===o.sentence.trim() && target===e && answer===g)
+    if(known) return {...result(ALT),...(known[3]?{note:known[3]}:{})}
+  }
   // Inflections, close spellings, added words and alternative expressions are not proof
   // of correctness. A contextual review can resolve them; an outage must not mark them wrong.
   return result(!o.spelling && looksLikeEnglishPhrase(given) ? UNSURE : WRONG)
@@ -221,6 +250,8 @@ const COACH_PROMPT = '\n先独立检查参考答案，不可把它当作权威�
   'alt 必须 grammar=correct、meaning=fits、issue=none。wrong 必须有明确错误依据；' +
   '语法正确而句意不同使用 issue=meaning。选词成立但词形错误时使用 issue=inflection，' +
   'correction 保留用户选词，只调整必要词形，不能替换成参考答案冒充词形纠正。' +
+  '没有英文句子的中文表达题，中文未限定数量时，不得仅因参考是复数而把可成立的单数短语判错。' +
+  '区分通常用复数的可数名词与词汇化复数；operations 在运营职能名称中常用复数，给搭配建议，不把风格偏好当语法错误。' +
   '词义接近不保证整句成立；不可忽略否定、数量、冠词、介词或时间限制。没有依据时用 unsure。'
 
 /** Validate model coaching; a correction never proves the original answer correct. */
@@ -359,6 +390,8 @@ function formReviewPrompt(o) {
   return '填好后的句子：' + filled + '\n' +
     (o.zh ? '句子要表达的意思：' + o.zh + '\n' : '') +
     '用户填的词：' + o.given + '\n' +
+    '本题参考填法（同样需要检查）：' + o.expected + '\n' +
+    '参考填入后的句子：' + String(o.sentence || '').replace(/_{3,}/, () => String(o.expected)) + '\n' +
     '请判断这句话是否成立。'
 }
 
@@ -374,6 +407,7 @@ function formReviewPrompt(o) {
 export function reviewStatusText(reason) {
   return ({ timeout: '核对服务响应较慢，暂时没有结论', unavailable: '核对服务暂时不可用',
     empty: '核对服务未返回答案', truncated: '核对回复未完成', invalid: '核对回复格式异常',
+    number_context: '中文没有限定数量，不能只按参考答案的单复数判错',
     reference_invalid: '参考用法有疑问，本题不应作为评分依据', reference_unknown: '参考用法尚无法可靠核实',
     ambiguous: '当前语境还不足以可靠判断', context: '这道题缺少判定所需的语境',
     article: '这处冠词需要结合语境判断' })[reason] || '这道题暂时无法可靠判定'
@@ -418,6 +452,8 @@ export async function reviewSemantics(o) {
     if (v !== ALT && v !== WRONG) return unresolved('invalid')
     if (v === WRONG && articleDifference(o.expected, o.given)) return unresolved('article')
     const detailed = ['grammar','meaning','issue','correction','explanation'].some(k => Object.hasOwn(j,k))
+    if (v === WRONG && !o.sentence && !quantitySpecified(o.zh) && numberOnlyDifference(o.expected,o.given) &&
+        (!detailed || j.issue === 'inflection')) return unresolved('number_context')
     const feedback = detailed ? parseCoaching(j, o) : null
     if (detailed && !feedback) return unresolved('invalid')
     loadCache()[key] = { v, feedback, t: Date.now() }

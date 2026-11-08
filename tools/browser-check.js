@@ -57,6 +57,20 @@ async function main() {
           if (measure.coarse) for (const label of measure.labels) assert.ok(label.height >= 44, 'small touch target: ' + JSON.stringify(label));
           return measure;
         };
+        await check('screenshot noun-number answers receive positive guidance without AI or an Again suggestion', async () => {
+          for (const [scenario,given] of [['noun-number','hotel amenity'],['campus-number','campus operation']]) {
+            await open(scenario); await tab('today'); await page.locator('#start-study').click();
+            await page.locator('#ans-in').fill(given); await page.locator('#ans-go').click();
+            assert.match(await page.locator('.verdict.good').innerText(),/表达思路成立/);
+            assert.equal(await page.locator('[data-g="1"].sug').count(),0);
+            assert.equal(await page.locator('[data-g="3"].sug').count(),1);
+            assert.equal(await page.evaluate(() => window.__reviewMock.calls),0);
+            await pause(400); await page.locator('[data-g="3"]').click();
+            await page.waitForFunction(() => window.__QA.snapshot().reviews.length === 1);
+            const review=await page.evaluate(() => window.__QA.snapshot().reviews[0]);
+            assert.equal(review.grade,3);assert.equal(review.verdict,'alt');await layout();
+          }
+        });
         await check('unsafe reference skips without FSRS, review or quota writes', async () => {
           await open('coaching'); await page.evaluate(() => { window.__reviewMock.mode = 'reference-invalid'; });
           const before = await page.evaluate(() => JSON.stringify(window.__QA.snapshot().cards));

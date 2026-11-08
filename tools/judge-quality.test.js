@@ -155,3 +155,26 @@ test('reference validity is mandatory but does not by itself prove user correctn
  const wrong=await J.reviewSemantics({...o,chat:async()=>JSON.stringify({reference:'valid',reference_reason:'',verdict:'wrong',grammar:'incorrect',meaning:'fits',issue:'inflection',correction:'lives',explanation:'She 是第三人称单数，这里需要 lives。'})});
  assert.equal(wrong.verdict,'wrong');assert.equal(wrong.feedback.correction,'lives');
 }));
+
+test('quantity-free meaning production accepts a reviewed countable singular with guidance',()=>fixture(J=>{
+ const r=J.judgeTyped('hotel amenity','hotel amenities',{zh:'酒店设施'});
+ assert.equal(r.verdict,'alt');assert.equal(r.target,false);assert.match(r.note,/没有限定/);
+ for(const o of [{zh:'所有酒店设施'},{zh:'两项酒店设施'},{zh:'酒店设施',spelling:true},{zh:'酒店设施',locked:true},{zh:'酒店设施',sentence:'Several hotel ________ are available.'}])
+  assert.notEqual(J.judgeTyped('hotel amenity','hotel amenities',o).verdict,'alt');
+ for(const [g,e] of [['good','goods'],['custom','customs'],['new','news'],['glass','glasses'],['operation','operations']])
+  assert.notEqual(J.judgeTyped(g,e,{zh:'设施'}).verdict,'alt');
+}));
+test('campus role-name number gets conventional-usage guidance only in the reviewed complete sentence',()=>fixture(J=>{
+ const sentence='The ________ team coordinates maintenance and events across all buildings.';
+ const r=J.judgeTyped('campus operation','campus operations',{sentence});assert.equal(r.verdict,'alt');assert.match(r.note,/惯用搭配/);
+ assert.notEqual(J.judgeTyped('campus operation','campus operations',{sentence:'They planned one ________.'}).verdict,'alt');
+ assert.notEqual(J.judgeTyped('campus operation','campus operations',{sentence,spelling:true}).verdict,'alt');
+}));
+test('unknown noun number without a quantity cannot become an unexplained model rejection',()=>fixture(async J=>{
+ const r=await J.reviewSemantics({expected:'student requests',given:'student request',zh:'学生请求',chat:async()=>JSON.stringify({reference:'valid',reference_reason:'',verdict:'wrong'})});
+ assert.equal(r.verdict,null);assert.equal(r.reason,'number_context');
+}));
+test('form review includes both independent user and reference sentences',()=>fixture(async J=>{
+ let request;await J.reviewSemantics({given:'deserve',expected:'deserves',sentence:'This idea ________ attention.',chat:async x=>{request=x;return JSON.stringify({verdict:'unsure'})}});
+ assert.match(request.user,/This idea deserve attention/);assert.match(request.user,/This idea deserves attention/);
+}));

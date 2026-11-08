@@ -67,3 +67,22 @@ test('liver food phrases, prepositional nouns and noun-subject questions remain 
   {pattern:'liver function',examples:[{en:'Can liver function improve after treatment?'}]},
  ]) assert.equal(Q.assessContent(word([good],[c])).issues.length,0,c.pattern);
 });
+
+
+test('actual corrected-noun record cannot retain any of four invented verb collocations',async()=>{
+ const Q=await modulePromise;
+ const collocations=[
+  ['liver (up) with (someone)','与…同住','In old texts, the knight would liver with his lord in the castle.'],
+  ['liver in (a place)','居住在…','They did liver in the countryside for many years.'],
+  ['liver upon (something)','靠…为生','The hermits would liver upon berries and roots.'],
+  ['liver by (doing something)','靠…过活','He used to liver by fishing in the river.'],
+ ].map(([pattern,zh,en])=>({pattern,zh,type:'verb+prep',examples:[{en}]}));
+ const w={...word([good],collocations),verification_status:'corrected'};
+ const r=Q.assessContent(w);assert.equal(r.blocked,false);assert.deepEqual(r.badCollocations,[0,1,2,3]);assert.deepEqual(r.payload.collocations,[]);assert.deepEqual(r.payload.senses,[good]);
+});
+
+test('false liver verb claims and live-family forms are removed even after noun examples were repaired',async()=>{
+ const Q=await modulePromise,w=word([good],[noun]);w.payload.confusables=[{word:'live',note:'liver 为其古体或方言形式。'},{word:'liver (noun)',note:'作名词指肝脏，与动词 liver 拼写相同。'}];w.payload.word_family=['lives','living','lived'];
+ const clean=Q.learningWord(w);assert.deepEqual(clean.payload.confusables,[]);assert.deepEqual(clean.payload.word_family,[]);
+ const draft=Q.repairDraft(w);assert.deepEqual(draft.payload.collocations,[noun]);assert.equal(draft.payload.confusables.length,1);
+});
