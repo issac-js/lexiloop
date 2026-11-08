@@ -26,6 +26,10 @@
         words[0].payload.senses = [{pos:'verb',def_zh:'构成理由；值得'}];
         words[0].payload.collocations = [{pattern:'warrant further investigation',zh:'值得进一步调查',examples:[{en:'The new evidence warrants further investigation.',zh:'新证据值得进一步调查。'}]}];
       }
+      if (name === 'quality' && i === 1) {
+        words[0].normalized = words[0].lemma = 'liver';
+        words[0].payload = {senses:[{pos:'verb',def_zh:'居住（古体或方言形式）'}],collocations:[{pattern:'liver with someone',examples:[{en:'The knight would liver with his lord.',zh:'骑士与领主同住。'}]}]};
+      }
       const isNew = name === 'learning' || (!['large', 'goal-recorded'].includes(name) && i > 6);
       cards.push({ id: i, word_id: i, card_type: name === 'coaching' && i === 1 ? 'cloze' : name === 'semantic' && i === 1 ? 'production' : 'recognition', deck: '默认词单', status: isNew ? 'new' : 'review',
         due: new Date(Date.now() - (name === 'overdue' && i === 1 ? 2 * 86400000 : 60000)).toISOString(),
@@ -111,8 +115,9 @@
       if (reviewMock.mode === 'hold') await new Promise((resolve) => reviewMock.releases.push(resolve));
       if (reviewMock.mode === 'error') throw Error('Synthetic model failure');
       const content = reviewMock.mode === 'invalid' ? 'not json' :
-        reviewMock.mode === 'coaching' ? JSON.stringify({verdict:'wrong',grammar:'incorrect',meaning:'fits',issue:'inflection',correction:'deserves',explanation:'evidence 作单数，一般现在时使用 deserves。'}) :
-        reviewMock.mode === 'semantic-alt' ? JSON.stringify({verdict:'alt'}) :
+        reviewMock.mode === 'reference-invalid' ? JSON.stringify({reference:'invalid',reference_reason:'Synthetic reference error',verdict:'unsure'}) :
+        reviewMock.mode === 'coaching' ? JSON.stringify({reference:'valid',reference_reason:'',verdict:'wrong',grammar:'incorrect',meaning:'fits',issue:'inflection',correction:'deserves',explanation:'evidence 作单数，一般现在时使用 deserves。'}) :
+        reviewMock.mode === 'semantic-alt' ? JSON.stringify({reference:'valid',reference_reason:'',verdict:'alt'}) :
         JSON.stringify({ pos_ok: true, severity: 'none', collocations: [{ index: 1, idiomatic: true, issue: '' }], missing_senses: [], suggestions: [] });
       yield { choices: [{ delta: { content } }] };
     },

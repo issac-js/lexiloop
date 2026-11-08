@@ -2,10 +2,10 @@
  * focus.js — 每日综合训练 UI（独立于正式 FSRS 学习进度）。
  * 本地统计不跨设备同步、不计打卡；AI 反馈只作为参考，不自动判定正确。
  */
-import * as S from './store.js?v=130'
-import * as CLOUD from './cloud.js?v=130'
-import { $, $$, esc, fail, toast } from './ui.js?v=130'
-import * as CORE from './focus-core.js?v=130'
+import * as S from './store.js?v=131'
+import * as CLOUD from './cloud.js?v=131'
+import { $, $$, esc, fail, toast } from './ui.js?v=131'
+import * as CORE from './focus-core.js?v=131'
 
 const HISTORY_KEY = 'lexiloop.focus.history.v1'
 const SCENARIOS = [
@@ -64,7 +64,7 @@ export function startFocus() {
     fail('词库仍在同步，先等数据加载完成或重试')
     return false
   }
-  const pool = CORE.buildFocusPool(S.state.cards, S.state.words, S.isBlockedWord)
+  const pool = CORE.buildFocusPool(S.state.cards, S.learningWords(), S.isBlockedWord)
   const plan = CORE.buildPlan(pool)
   if (!plan) {
     fail('至少需要 5 个已经学过、通过审核且有中文释义的表达')

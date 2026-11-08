@@ -4,18 +4,18 @@
  * 因此游戏本身不计分；结束时给一个**可选**的"把这次表现记进复习计划"，
  * 由用户自己决定是否写入调度（避免游戏手感污染记忆曲线）。
  */
-import * as S from './store.js?v=130'
-import * as CLOUD from './cloud.js?v=130'
-import { $, $$, esc, icon, toast, fail, ok, speak, openModal, closeModal, confirmDialog } from './ui.js?v=130'
+import * as S from './store.js?v=131'
+import * as CLOUD from './cloud.js?v=131'
+import { $, $$, esc, icon, toast, fail, ok, speak, openModal, closeModal, confirmDialog } from './ui.js?v=131'
 import {
   normalizeAns, judgeTyped, buildChoices, whyNote, whyBlockHTML, verdictHTML,
   reviewSemantics, looksLikeEnglishPhrase, cachedVerdict, cachedReview,
   dataStateCard,
   HIT, ALT, WRONG, UNSURE,
-} from './views.js?v=130'
-import * as LABS from './labs.js?v=130'
-import * as FOCUS from './focus.js?v=130'
-import * as TRANSFER from './transfer.js?v=130'
+} from './views.js?v=131'
+import * as LABS from './labs.js?v=131'
+import * as FOCUS from './focus.js?v=131'
+import * as TRANSFER from './transfer.js?v=131'
 
 const G = { mode: null, match: null, dict: null, quiz: null, chat: null, timer: null, story: null, size: 0 }
 
@@ -203,7 +203,7 @@ function storyCandidates() {
   const seen = new Set()
   const out = []
   S.state.cards.forEach((c) => {
-    const w = S.wordOf(c)
+    const w = S.learningWordOf(c)
     if (!w || seen.has(w.id) || S.isBlockedWord(w)) return
     const p = w.payload || {}
     const zh = ((p.senses || [])[0] || {}).def_zh
@@ -501,7 +501,7 @@ function pickPool(max) {
   const seen = new Set()
   const pool = []
   S.state.cards.forEach((c) => {
-    const w = S.wordOf(c)
+    const w = S.learningWordOf(c)
     if (!w || seen.has(w.id) || S.isBlockedWord(w)) return
     const p = w.payload || {}
     const zh = ((p.senses || [])[0] || {}).def_zh
@@ -625,7 +625,7 @@ function weeklyPool(limit) {
   const seen = new Set()
   const out = []
   const add = (c) => {
-    const w = S.wordOf(c)
+    const w = S.learningWordOf(c)
     if (!w || seen.has(w.id) || S.isBlockedWord(w)) return
     const zh = (((w.payload || {}).senses || [])[0] || {}).def_zh
     if (!zh) return
@@ -821,7 +821,7 @@ function renderDict() {
     (a
       ? verdictHTML(a, { taskLabel: '目标表达' }) +
         // 答错时补一句"为什么"，避免同一个坑反复踩
-        (a.verdict === WRONG ? whyBlockHTML(S.wordOf({ word_id: q.id })) : '')
+        (a.verdict === WRONG ? whyBlockHTML(S.learningWordOf({ word_id: q.id })) : '')
       : '') +
     // 选择题模式下不需要输入框和"提交"—— 选项本身就是作答区
     (meta.choice ? '' :
@@ -893,6 +893,7 @@ function bindDict(cb) {
           }).then((res) => {
             owner.feedback = res.feedback || null
             owner.reviewReason = res.reason
+            owner.referenceInvalid = ['reference_invalid','reference_unknown'].includes(res.reason)
             applyVerbal(res.verdict, qi, owner, q)
             if (d.i === qi) cb()
           })
@@ -1058,7 +1059,7 @@ function hydrateStars() {
 function topicsList() {
   const byTopic = new Map()
   S.state.cards.forEach((c) => {
-    const w = S.wordOf(c)
+    const w = S.learningWordOf(c)
     if (!w || S.isBlockedWord(w)) return
     const p = w.payload || {}
     const zh = ((p.senses || [])[0] || {}).def_zh
@@ -1308,7 +1309,7 @@ const escapeRe = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 function chatTargets(sc) {
   const byWord = new Map()
   S.state.cards.forEach((c) => {
-    const w = S.wordOf(c)
+    const w = S.learningWordOf(c)
     // 待审核词条不进对话目标 —— 与学习队列同一把闸门，否则练习场会绕过它
     if (!w || byWord.has(w.id) || S.isBlockedWord(w)) return          // 同一个词只留一个目标
     const p = w.payload || {}

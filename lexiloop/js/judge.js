@@ -23,7 +23,7 @@
 
 /* v3：词形变体改用"代入式语法判断"专用提示词 —— 旧问法实测会波动
    （同一用例 8 次采样 7 次对、1 次错），旧缓存里的结论不能重放。 */
-const LS_CACHE = 'lexiloop.judgecache.v8'
+const LS_CACHE = 'lexiloop.judgecache.v9'
 const CACHE_MAX = 400
 export const SEMANTIC_TIMEOUT_MS = 12000
 export const SEMANTIC_MAX_TOKENS = 512
@@ -212,7 +212,9 @@ const SYS_PROMPT =
   '动词原形不能因词义正确就放行：She intercede 和 The bank deduct money from 均主谓不一致。\n' +
   '只有语法不成立才判 wrong，例如 "She ___ him yesterday" 填 compliments。'
 
-const COACH_PROMPT = '\n在 verdict 之外同时返回以下字段：' +
+const COACH_PROMPT = '\n先独立检查参考答案，不可把它当作权威。返回 reference:"valid"|"invalid"|"unknown" 和 reference_reason（具体依据）。' +
+  '参考答案填入句中不成立或依赖无依据的古体/方言用法时 reference=invalid；缺乏依据用 unknown，不能断言错误。' +
+  'reference 非 valid 时 verdict=unsure。然后独立评估用户作答。\n在 verdict 之外同时返回以下字段：' +
   'grammar:"correct"|"incorrect"|"unknown", meaning:"fits"|"different"|"unknown", ' +
   'issue:"none"|"inflection"|"grammar"|"meaning", correction:"修改后的完整填空内容或空字符串", ' +
   'explanation:"不超过120字的中文具体差异及原因"。' +
@@ -372,6 +374,7 @@ function formReviewPrompt(o) {
 export function reviewStatusText(reason) {
   return ({ timeout: '核对服务响应较慢，暂时没有结论', unavailable: '核对服务暂时不可用',
     empty: '核对服务未返回答案', truncated: '核对回复未完成', invalid: '核对回复格式异常',
+    reference_invalid: '参考用法有疑问，本题不应作为评分依据', reference_unknown: '参考用法尚无法可靠核实',
     ambiguous: '当前语境还不足以可靠判断', context: '这道题缺少判定所需的语境',
     article: '这处冠词需要结合语境判断' })[reason] || '这道题暂时无法可靠判定'
 }
@@ -403,7 +406,14 @@ export async function reviewSemantics(o) {
     try {
       j = JSON.parse(raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, ''))
     } catch (e) { return unresolved('invalid') }
+    if (j && Object.hasOwn(j, 'reference')) {
+      if (!['valid','invalid','unknown'].includes(j.reference) || typeof j.reference_reason !== 'string' ||
+          j.reference_reason.length > 240 || (j.reference !== 'valid' && !j.reference_reason.trim())) return unresolved('invalid')
+      if (j.reference === 'invalid') return unresolved('reference_invalid')
+      if (j.reference === 'unknown') return unresolved('reference_unknown')
+    }
     const v = j && typeof j === 'object' && !Array.isArray(j) ? j.verdict : null
+    if ([ALT, WRONG].includes(v) && !Object.hasOwn(j, 'reference')) return unresolved('reference_unknown')
     if (v === 'unsure') return unresolved('ambiguous')
     if (v !== ALT && v !== WRONG) return unresolved('invalid')
     if (v === WRONG && articleDifference(o.expected, o.given)) return unresolved('article')

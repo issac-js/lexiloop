@@ -5,11 +5,12 @@
  * 再异步推到云端；换设备登录时从云端整体拉回。单用户跨设备不会并发改同一张卡，
  * 因此采用「以云端为权威 + 本地乐观更新」的简单模型。
  */
-import { db, getSession } from './cloud.js?v=130'
-import { LS_KEYS, DEFAULT_SETTINGS } from './config.js?v=130'
-import * as FSRS from './fsrs.js?v=130'
+import { db, getSession } from './cloud.js?v=131'
+import { LS_KEYS, DEFAULT_SETTINGS } from './config.js?v=131'
+import { learningWord, assessContent } from './content-quality.js?v=131'
+import * as FSRS from './fsrs.js?v=131'
 /* 目标完成度的纯算术单独成模块，方便离线单测（工具页与今日页共用同一口径）。 */
-export { goalCompletion } from './goal-metrics.js?v=130'
+export { goalCompletion } from './goal-metrics.js?v=131'
 
 export const state = {
   booted: false,
@@ -73,6 +74,9 @@ export function wordOf(card) {
   ensureWordIndex()
   return wordById.get(card.word_id) || null
 }
+
+export function learningWordOf(card) { return learningWord(wordOf(card)) }
+export function learningWords() { return state.words.map(learningWord) }
 
 /* ───────────────────────── 本地持久化 ───────────────────────── */
 
@@ -1366,7 +1370,9 @@ export function blockReason(w) {
   if (!w) return ''
   const st = w.verification_status
   if (st === 'flagged' || st === 'suspect') return 'review'
-  const p = (w && w.payload) || {}
+  const quality = assessContent(w)
+  if (quality.blocked && quality.issues.length) return 'review'
+  const p = quality.payload
   const senses = Array.isArray(p.senses) ? p.senses.filter((x) => x && (x.def_zh || x.def_en)) : []
   const colls = Array.isArray(p.collocations) ? p.collocations.filter((x) => x && x.pattern) : []
   if (!senses.length && !colls.length) return 'empty'
