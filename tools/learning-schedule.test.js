@@ -475,3 +475,17 @@ test('production review receives the Chinese meaning shown in the actual study q
   assert.match(V.renderStudy(), /你的表达也对/);
   assert.equal(requests.filter(r=>r.name==='record_review').length,0);
 }));
+
+test('specific coaching escapes model text, starts collapsed and keeps correction result visible without writes',()=>withApp(({ V, requests })=>{
+  const a={verdict:'wrong',ok:false,expected:'warrants',given:'deserve',sentence:'The new evidence ________ further investigation.',
+    feedback:{grammar:'incorrect',meaning:'fits',issue:'inflection',correction:'deserves',explanation:'evidence 作单数。<img src=x onerror=alert(1)>'}};
+  const before=V.verdictHTML(a,{retry:true});
+  assert.match(before,/选词思路成立/);assert.doesNotMatch(before,/<img src=x/);assert.match(before,/&lt;img/);
+  assert.match(before,/<details class="feedback-detail"><summary>试着修正/);
+  const after=V.verdictHTML({...a,practiceChecked:true,practiceSucceeded:true,practiceText:'deserves'},{retry:true});
+  assert.match(after,/<details class="feedback-detail" open><summary>试着修正/);
+  assert.match(after,/已按反馈完成修正/);assert.match(after,/value="deserves"/);
+  const distinction=V.verdictHTML({...a,given:'introduce',expected:'refer',feedback:{grammar:'correct',meaning:'different',issue:'meaning',correction:'',explanation:'介绍认识与转介求助不同。'}});
+  assert.match(distinction,/语法成立/);assert.doesNotMatch(distinction,/verdict bad|英语没问题/);
+  assert.equal(requests.length,0);
+}));
