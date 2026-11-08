@@ -45,3 +45,11 @@ test('pilot cannot call cloud model, review or settings persistence',()=>{
  assert.doesNotMatch(src,/S\.(?:recordReview|applyGrade|persistReview|pushSettings|persistCard)\s*\(/);
  assert.doesNotMatch(src,/CLOUD|chatText|fetch\s*\(/);
 });
+
+test('introduce is taught as a context distinction, never relabeled as the refer target',()=>fixture(T=>{
+ const group=T.GROUPS.find(g=>g.id==='refer');
+ assert.equal(T.checkTransfer(group,'Introduce'),'distinction');
+ assert.match(group.relatedAnswers.introduce,/介绍.*认识/);
+ assert.equal(T.checkTransfer(group,'not introduce'),'unreviewed');
+ assert.equal(T.checkTransfer(T.GROUPS[0],'introduce'),'unreviewed');
+}));

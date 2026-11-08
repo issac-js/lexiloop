@@ -4,18 +4,18 @@
  * 因此游戏本身不计分；结束时给一个**可选**的"把这次表现记进复习计划"，
  * 由用户自己决定是否写入调度（避免游戏手感污染记忆曲线）。
  */
-import * as S from './store.js?v=129'
-import * as CLOUD from './cloud.js?v=129'
-import { $, $$, esc, icon, toast, fail, ok, speak, openModal, closeModal, confirmDialog } from './ui.js?v=129'
+import * as S from './store.js?v=130'
+import * as CLOUD from './cloud.js?v=130'
+import { $, $$, esc, icon, toast, fail, ok, speak, openModal, closeModal, confirmDialog } from './ui.js?v=130'
 import {
   normalizeAns, judgeTyped, buildChoices, whyNote, whyBlockHTML, verdictHTML,
-  reviewSemantics, looksLikeEnglishPhrase, cachedVerdict,
+  reviewSemantics, looksLikeEnglishPhrase, cachedVerdict, cachedReview,
   dataStateCard,
   HIT, ALT, WRONG, UNSURE,
-} from './views.js?v=129'
-import * as LABS from './labs.js?v=129'
-import * as FOCUS from './focus.js?v=129'
-import * as TRANSFER from './transfer.js?v=129'
+} from './views.js?v=130'
+import * as LABS from './labs.js?v=130'
+import * as FOCUS from './focus.js?v=130'
+import * as TRANSFER from './transfer.js?v=130'
 
 const G = { mode: null, match: null, dict: null, quiz: null, chat: null, timer: null, story: null, size: 0 }
 
@@ -858,7 +858,7 @@ function bindDict(cb) {
       const ms = Math.max(0, Date.now() - (d.qStart || Date.now()))
       d.answered = {
         ok: r.ok, verdict: r.verdict, typo: r.typo, loose: r.loose,
-        empty: r.empty, given: given, expected: meta.expected, kind: 'type',
+        empty: r.empty, given: given, expected: meta.expected, kind: 'type', sentence:meta.sentence || '',
       }
       d.results = (d.results || []).concat([{
         id: q.id, ok: r.ok, verdict: r.verdict, ms: ms,
@@ -878,8 +878,8 @@ function bindDict(cb) {
         // 对不上就只当缓存已写（verdict 已经在 judge 层落盘），不动当前界面。
         const qi = d.i
         const owner = d.answered
-        const cached = cachedVerdict(meta.expected, given, { sentence: meta.sentence || '', zh: meta.zh || '', model: S.state.settings.llm_model || undefined })
-        if (cached) applyVerbal(cached, qi, owner, q)
+        const cached = cachedReview(meta.expected, given, { sentence: meta.sentence || '', zh: meta.zh || '', model: S.state.settings.llm_model || undefined })
+        if (cached) { owner.feedback = cached.feedback; applyVerbal(cached.verdict, qi, owner, q) }
         else {
           d.answered.reviewing = true
           cb()
@@ -891,6 +891,7 @@ function bindDict(cb) {
             chat: CLOUD.chatText,
             model: S.state.settings.llm_model || undefined,
           }).then((res) => {
+            owner.feedback = res.feedback || null
             owner.reviewReason = res.reason
             applyVerbal(res.verdict, qi, owner, q)
             if (d.i === qi) cb()

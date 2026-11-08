@@ -1,7 +1,7 @@
 /** Small, curated structure → retrieval → new-context pilot. No model or FSRS writes. */
-import * as S from './store.js?v=129'
-import { $, esc } from './ui.js?v=129'
-import { normalizeAns } from './judge.js?v=129'
+import * as S from './store.js?v=130'
+import { $, esc } from './ui.js?v=130'
+import { normalizeAns } from './judge.js?v=130'
 
 // Original examples; references explain meaning, not an exhaustive list of valid answers.
 export const GROUPS = [
@@ -60,7 +60,8 @@ export const GROUPS = [
     sentence:'I can ________ you to the student support team.',
     zh:'我可以把你转介到学生支持团队。', target:'refer', accept:['direct'],
     transfer:'如果需要转接来电，而不是转介人员，怎样说？',
-    reference:'I can transfer your call to the student support team.', source:'refer' },
+    reference:'I can transfer your call to the student support team.', source:'refer',
+    relatedAnswers: { introduce:'这句话语法成立。introduce you to the team 是介绍你认识团队；refer you to the team 强调转介给团队求助。这里练习的是后者。' } },
   { id:'restrict', title:'限制：范围与权限',
     structure:'明确风险或规则 → 说明限制范围 → 提供合规下一步',
     contrast:'restrict access to a building 是限制楼宇出入；deny access 是拒绝通行。限制不一定意味着对所有人全面拒绝。',
@@ -100,6 +101,7 @@ export function checkTransfer(group, given) {
   if (!text) return 'empty'
   if (text === normalizeAns(group.target)) return 'hit'
   if (group.accept.some(x => text === normalizeAns(x))) return 'alt'
+  if (group.relatedAnswers && Object.hasOwn(group.relatedAnswers, text)) return 'distinction'
   // This is a curated reference list, not an exhaustive language judge.
   return 'unreviewed'
 }
@@ -130,7 +132,9 @@ export function renderTransfer() {
       '<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:12px;"><button class="btn primary" id="transfer-check">核对表达</button>' +
       '<button class="btn" id="transfer-hint">先看知识联系</button><button class="btn" id="transfer-reveal">先看参考</button></div>' :
       '<div class="verdict ' + (['hit','alt'].includes(s.result)?'good':'unsure') + '">' +
-      (s.result === 'hit' ? '这个表达成立。' : s.result === 'alt' ? '你的表达也成立，不必照抄参考。' : '先对照参考：未收录的表达不等于错误。') +
+      (s.result === 'hit' ? '这个表达成立。' : s.result === 'alt' ? '你的表达也成立，不必照抄参考。' : s.result === 'distinction' ? '表达成立，用意有区别。' : '先对照参考：未收录的表达不等于错误。') +
+      (s.result === 'distinction' ? '<p>' + esc(g.relatedAnswers[normalizeAns(s.given)]) + '</p>' :
+        s.result === 'unreviewed' ? '<p>这里采用离线参考表，尚未判断这条作答。可先比较：' + esc(g.contrast) + '</p>' : '') +
       '<p>你写的：' + esc(s.given || '本次先看参考') + '<br>参考填法：<b>' + esc(g.target) + '</b></p></div>' +
       '<details><summary style="min-height:44px;cursor:pointer;">查看表达联系与例句</summary>' + structure + '</details>' +
       '<h3>再换一个情境（可选）</h3><p>' + esc(g.transfer) + '</p>' +

@@ -97,6 +97,23 @@ trigger.onclick = async () => {
     assert(JSON.stringify(window.__QA.snapshot()) === before, 'Pilot modified learning');
     await tap('#transfer-home');
   });
+  await check('specific inflection coaching and correction stay reachable without duplicate review', async () => {
+    await reset('coaching'); window.__reviewMock.mode = 'coaching';
+    await tap('#start-study');
+    document.querySelector('#ans-in').value = 'deserve'; await tap('#ans-go');
+    for(let n=0;n<50 && !document.querySelector('#ans-practice');n++) await wait(100);
+    assert(document.querySelector('.verdict').textContent.includes('选词思路成立'), 'Missing specific coach');
+    assert(document.querySelector('[data-g="2"]').classList.contains('sug'), 'Wrong grade suggestion');
+    const details = document.querySelector('#ans-practice').closest('details'); details.open = true;
+    document.querySelector('#ans-practice').value = 'deserves';
+    document.querySelector('#ans-practice').dispatchEvent(new Event('input')); await tap('#ans-practice-check');
+    assert(document.querySelector('.verdict').textContent.includes('已按反馈完成修正'), 'Correction not retained');
+    assert(window.__QA.snapshot().reviews.length===0, 'Practice created review');
+    assert(document.documentElement.scrollWidth<=innerWidth+1, 'Coach overflows');
+    await tap('[data-g="2"]'); await wait(400);
+    const rows=window.__QA.snapshot().reviews;
+    assert(rows.length===1 && rows[0].verdict==='wrong' && rows[0].prev_state.learning_observation.corrected_with_feedback===true, 'Original attempt lost');
+  });
   await check('real Safari DOM new-card failure and consolidation flow persists across sync', async () => {
     await reset('learning');
     const answer = async (grade, independent) => {

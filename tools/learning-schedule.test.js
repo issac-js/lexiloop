@@ -365,7 +365,7 @@ test('study records separate response and feedback time across reveal, rerender 
     let args = requests.filter(row => row.name === 'record_review').at(-1).args;
     assert.equal(args.p_elapsed_ms, 8000);
     assert.deepEqual(args.p_prev_state.learning_observation, {
-      version: 1, review_reason: null, card_type: 'recognition', response_ms: 5000, feedback_ms: 3000, total_ms: 8000,
+      version: 1, review_reason: null, corrected_with_feedback: false, card_type: 'recognition', response_ms: 5000, feedback_ms: 3000, total_ms: 8000,
     });
     assert.equal(args.p_hinted, true);
     assert.equal(args.p_grade, 1); // Existing hard-hint scheduling still applies.
@@ -445,8 +445,8 @@ test('review export preserves evidence, paginates a stable snapshot and marks le
   const csv = E.buildReviewsCsv([exported[0], { ...exported.at(-1), word: 'say "hello",\nplease' }]);
   assert.match(csv.split('\n')[0], /created_at_iso,id,card_id,word_id,source,verdict,hinted,assisted/);
   assert.match(csv, /"2026-11-07T01:00:00.000Z"/);
-  assert.match(csv.split('\n')[0], /previous_stability,review_reason$/);
-  assert.match(csv.split('\n')[1], /,"reviewed"$/);
+  assert.match(csv.split('\n')[0], /previous_stability,review_reason,corrected_with_feedback$/);
+  assert.match(csv.split('\n')[1], /,"reviewed",""$/);
   assert.match(csv, /"alt","false","false","study_wall_v1","5000","3000"/);
   assert.ok(csv.includes('"say ""hello"",\nplease"'));
 }));
@@ -474,4 +474,18 @@ test('production review receives the Chinese meaning shown in the actual study q
   assert.ok(sent, 'Semantic review was silently skipped'); assert.match(sent.messages[1].content,/处理问题/);
   assert.match(V.renderStudy(), /你的表达也对/);
   assert.equal(requests.filter(r=>r.name==='record_review').length,0);
+}));
+
+test('specific coaching escapes model text, starts collapsed and keeps correction result visible without writes',()=>withApp(({ V, requests })=>{
+  const a={verdict:'wrong',ok:false,expected:'warrants',given:'deserve',sentence:'The new evidence ________ further investigation.',
+    feedback:{grammar:'incorrect',meaning:'fits',issue:'inflection',correction:'deserves',explanation:'evidence 作单数。<img src=x onerror=alert(1)>'}};
+  const before=V.verdictHTML(a,{retry:true});
+  assert.match(before,/选词思路成立/);assert.doesNotMatch(before,/<img src=x/);assert.match(before,/&lt;img/);
+  assert.match(before,/<details class="feedback-detail"><summary>试着修正/);
+  const after=V.verdictHTML({...a,practiceChecked:true,practiceSucceeded:true,practiceText:'deserves'},{retry:true});
+  assert.match(after,/<details class="feedback-detail" open><summary>试着修正/);
+  assert.match(after,/已按反馈完成修正/);assert.match(after,/value="deserves"/);
+  const distinction=V.verdictHTML({...a,given:'introduce',expected:'refer',feedback:{grammar:'correct',meaning:'different',issue:'meaning',correction:'',explanation:'介绍认识与转介求助不同。'}});
+  assert.match(distinction,/语法成立/);assert.doesNotMatch(distinction,/verdict bad|英语没问题/);
+  assert.equal(requests.length,0);
 }));

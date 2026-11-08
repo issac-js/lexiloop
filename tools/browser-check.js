@@ -239,6 +239,25 @@ async function main() {
           assert.equal(rows[0].prev_state.learning_observation.review_reason,'reviewed');
           await layout();
         });
+        await check('alternative-word inflection gets specific coaching, guided correction and one original review', async () => {
+          await open('coaching');
+          await page.evaluate(() => { window.__reviewMock.mode = 'coaching'; });
+          await tab('today'); await page.locator('#start-study').click();
+          await page.locator('#ans-in').fill('deserve'); await page.locator('#ans-go').click();
+          await page.getByText(/选词思路成立/).waitFor();
+          assert.match(await page.locator('.verdict').innerText(), /evidence/);
+          assert.equal(await page.locator('[data-g="2"]').getAttribute('class'),'sug');
+          assert.notEqual(await page.locator('[data-g="1"]').getAttribute('class'),'sug');
+          await page.getByText('试着修正一次（可选）', {exact:true}).click();
+          await page.locator('#ans-practice').fill('deserves'); await page.locator('#ans-practice-check').click();
+          await page.getByText(/已按反馈完成修正/).waitFor();
+          assert.equal(await page.evaluate(() => window.__QA.snapshot().reviews.length),0);
+          await page.locator('[data-g="2"]').click(); await pause(400);
+          const rows = await page.evaluate(() => window.__QA.snapshot().reviews);
+          assert.equal(rows.length,1);assert.equal(rows[0].verdict,'wrong');assert.equal(rows[0].grade,2);
+          assert.equal(rows[0].prev_state.learning_observation.corrected_with_feedback,true);
+          await layout();
+        });
         await check('transfer pilot completes through practice hub; hints and alternatives do not mutate learning', async () => {
           await open(); await tab('games');
           const before = await page.evaluate(() => window.__QA.snapshot());
