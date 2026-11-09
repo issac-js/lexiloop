@@ -327,9 +327,14 @@ async function main() {
           await layout(); await page.locator('#transfer-home').click(); await page.locator('#g-transfer').waitFor();
         });
         if (variant.full) {
-          await check('daily focus runs end-to-end without changing FSRS or daily reviews', async () => {
+          await check('daily focus has one entry and runs end-to-end without changing FSRS or daily reviews', async () => {
             await open(); await tab('games');
             const before = await page.evaluate(() => window.__QA.snapshot());
+            await page.locator('#g-pick').click();
+            assert.equal(await page.locator('.mode-tile').count(), 8);
+            assert.equal(await page.locator('.mode-tile').filter({ hasText: '每日综合训练' }).count(), 0);
+            await page.locator('#mode-cancel').click();
+            assert.equal(await page.locator('#g-focus').count(), 1);
             await page.locator('#g-focus').click();
             assert.ok(await page.locator('#focus-reveal').count(), 'focus recall did not open');
             for (let n = 0; n < 4 && await page.locator('#focus-reveal').count(); n++) {

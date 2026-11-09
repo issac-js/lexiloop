@@ -1,5 +1,5 @@
 /** Content reports and a resumable, two-worker foreground queue. No credentials or DOM. */
-import { assessContent, contentKey, REPORT_VERSION } from './content-quality.js?v=131'
+import { assessContent, contentKey, REPORT_VERSION } from './content-quality.js?v=132'
 export const REVIEW_VERSION = REPORT_VERSION
 export const REVIEW_TIMEOUT_MS = 120000
 export const REVIEW_CACHE_DAYS = 30

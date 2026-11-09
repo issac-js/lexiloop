@@ -2,26 +2,26 @@
  * views.js — 全部页面
  * 每个页面导出 render()（返回 HTML）与 bind()（挂载事件），由 app.js 调度。
  */
-import * as S from './store.js?v=131'
-import * as FSRS from './fsrs.js?v=131'
-import { assessContent, repairDraft, learningWord } from './content-quality.js?v=131'
-import { CARD_TYPES, ENRICH_CONCURRENCY, RECOMMENDED_SETTINGS } from './config.js?v=131'
+import * as S from './store.js?v=132'
+import * as FSRS from './fsrs.js?v=132'
+import { assessContent, repairDraft, learningWord } from './content-quality.js?v=132'
+import { CARD_TYPES, ENRICH_CONCURRENCY, RECOMMENDED_SETTINGS } from './config.js?v=132'
 import {
   esc, $, $$, toast, fail, ok, openModal, closeModal, confirmDialog,
   icon, LOGO_SVG, speak, fmtDateCN, relTime, STRENGTH_ZH, REGISTER_ZH,
   listEnVoices, getVoicePref, setVoicePref, getTheme, applyTheme,
-} from './ui.js?v=131'
-import * as AUTH from './cloud.js?v=131'
-import * as ENRICH from './enrich.js?v=131'
-import * as EXP from './exporter.js?v=131'
-import { createReviewRunner, parseReviewReport, auditEntry, REVIEW_VERSION, REVIEW_TIMEOUT_MS } from './content-review.js?v=131'
-export { REVIEW_TIMEOUT_MS } from './content-review.js?v=131'
-import { parseImport, skippedLines, DEFAULT_MAX_WORDS } from './importer.js?v=131'
+} from './ui.js?v=132'
+import * as AUTH from './cloud.js?v=132'
+import * as ENRICH from './enrich.js?v=132'
+import * as EXP from './exporter.js?v=132'
+import { createReviewRunner, parseReviewReport, auditEntry, REVIEW_VERSION, REVIEW_TIMEOUT_MS } from './content-review.js?v=132'
+export { REVIEW_TIMEOUT_MS } from './content-review.js?v=132'
+import { parseImport, skippedLines, DEFAULT_MAX_WORDS } from './importer.js?v=132'
 
 import {
   judgeTyped, reviewSemantics, looksLikeEnglishPhrase, cachedVerdict, cachedReview, coachingFeedback, inflectionFeedback, articleDifference, reviewStatusText,
   HIT, ALT, WRONG, UNSURE,
-} from './judge.js?v=131'
+} from './judge.js?v=132'
 
 /* ═════════════════════════ 通用片段 ═════════════════════════ */
 
@@ -1077,7 +1077,7 @@ export function sessionProgress() {
 export {
   normalizeAns, judgeTyped, looksLikeEnglishPhrase, reviewSemantics, cachedVerdict, cachedReview,
   clearJudgeCache, HIT, ALT, WRONG, UNSURE,
-} from './judge.js?v=131'
+} from './judge.js?v=132'
 
 const REG_ZH = { formal: '正式', neutral: '中性', spoken: '口语', informal: '非正式' }
 
