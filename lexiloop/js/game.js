@@ -4,18 +4,18 @@
  * 因此游戏本身不计分；结束时给一个**可选**的"把这次表现记进复习计划"，
  * 由用户自己决定是否写入调度（避免游戏手感污染记忆曲线）。
  */
-import * as S from './store.js?v=131'
-import * as CLOUD from './cloud.js?v=131'
-import { $, $$, esc, icon, toast, fail, ok, speak, openModal, closeModal, confirmDialog } from './ui.js?v=131'
+import * as S from './store.js?v=132'
+import * as CLOUD from './cloud.js?v=132'
+import { $, $$, esc, icon, toast, fail, ok, speak, openModal, closeModal, confirmDialog } from './ui.js?v=132'
 import {
   normalizeAns, judgeTyped, buildChoices, whyNote, whyBlockHTML, verdictHTML,
   reviewSemantics, looksLikeEnglishPhrase, cachedVerdict, cachedReview,
   dataStateCard,
   HIT, ALT, WRONG, UNSURE,
-} from './views.js?v=131'
-import * as LABS from './labs.js?v=131'
-import * as FOCUS from './focus.js?v=131'
-import * as TRANSFER from './transfer.js?v=131'
+} from './views.js?v=132'
+import * as LABS from './labs.js?v=132'
+import * as FOCUS from './focus.js?v=132'
+import * as TRANSFER from './transfer.js?v=132'
 
 const G = { mode: null, match: null, dict: null, quiz: null, chat: null, timer: null, story: null, size: 0 }
 
@@ -144,7 +144,6 @@ const PRACTICE_MODES = [
   { key: 'battle', label: '搭配对战', hint: '回合制选搭配' },
   { key: 'sentence', label: '组句练习', hint: '练语序、冠词、介词' },
   { key: 'speech', label: '语音跟读', hint: '开口读，自动打分' },
-  { key: 'focus', label: '每日综合训练', hint: '主动提取、辨析和情景应用' },
 ]
 
 const SIZE_OPTIONS = [0, 10, 20, 30]
@@ -162,7 +161,6 @@ function sizeChips() {
 }
 
 function launchMode(k, cb) {
-  if (k === 'focus') { if (FOCUS.startFocus()) { G.mode = 'focus'; cb() } }
   if (k === 'match') { startMatch(); cb() }
   else if (k === 'dict-listen') { if (startDict('listen')) cb() }
   else if (k === 'dict-zh') { if (startDict('zh')) cb() }
@@ -1649,7 +1647,7 @@ export function renderGames() {
 
     '<div class="card">' +
     '<div class="card-head"><h2>开始练习</h2></div>' +
-    '<p class="muted" style="margin:0 0 10px;">8 种模式：配对、听写、闯关、AI 对话、对战、组句、跟读（都有结束小结，' +
+    '<p class="muted" style="margin:0 0 10px;">8 种模式：配对、听写、中译英、闯关、AI 对话、对战、组句、跟读（都有结束小结，' +
     '可选择性写进复习计划）。</p>' +
     '<div class="field" style="margin:0;"><label>每组练习词数</label></div>' +
     sizeChips() +
@@ -1670,7 +1668,7 @@ export function bindGames(cb, go) {
   if (transfer) transfer.onclick = () => { TRANSFER.startTransfer(); G.mode = 'transfer'; cb() }
   if (G.mode === 'transfer') TRANSFER.bindTransfer(cb, () => { G.mode = null; cb() })
   const focus = $('#g-focus')
-  if (focus) focus.onclick = () => launchMode('focus', cb)
+  if (focus) focus.onclick = () => { if (FOCUS.startFocus()) { G.mode = 'focus'; cb() } }
   const pick = $('#g-pick')
   if (pick) pick.onclick = () => openModePicker(cb)
   const story = $('#g-story')
