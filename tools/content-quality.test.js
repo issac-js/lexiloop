@@ -31,7 +31,7 @@ test('rare usage is isolated for modern practice without declaring historical us
 });
 test('a questionable confusion-box historical claim cannot be shown as an instructional fact',async()=>{
  const Q=await modulePromise,w=word([good],[noun]);w.payload.confusables=[{word:'live',note:'liver 是其古体形式。'}];
- assert.deepEqual(Q.learningWord(w).payload.confusables,[]);assert.equal(Q.assessContent(w).blocked,false);
+ assert.deepEqual(Q.assessContent(w).payload.confusables,[]);assert.equal(Q.assessContent(w).blocked,false);
 });
 test('model review isolates only indexed collocations, tied to exact content snapshot',async()=>{
  const Q=await modulePromise,w=word([good],[noun,{pattern:'bad material'}]);
@@ -83,6 +83,118 @@ test('actual corrected-noun record cannot retain any of four invented verb collo
 
 test('false liver verb claims and live-family forms are removed even after noun examples were repaired',async()=>{
  const Q=await modulePromise,w=word([good],[noun]);w.payload.confusables=[{word:'live',note:'liver 为其古体或方言形式。'},{word:'liver (noun)',note:'作名词指肝脏，与动词 liver 拼写相同。'}];w.payload.word_family=['lives','living','lived'];
- const clean=Q.learningWord(w);assert.deepEqual(clean.payload.confusables,[]);assert.deepEqual(clean.payload.word_family,[]);
+ const clean=Q.learningWord(w);assert.deepEqual(clean.payload.confusables.map(c => c.word),['live']);assert.deepEqual(clean.payload.word_family,[]);
  const draft=Q.repairDraft(w);assert.deepEqual(draft.payload.collocations,[noun]);assert.equal(draft.payload.confusables.length,1);
+});
+
+const badFeatExample = {en:'He feated a remarkable goal in the final minutes of the match.'};
+const featNoun = {pos:'noun',def_zh:'壮举'};
+const featNounCollocation = {pattern:'remarkable feats',examples:[{en:'The team achieved remarkable feats this season.'}]};
+
+test('the reported feated-goal reference is removed from old corrected entries before cloze selection', async () => {
+ const Q = await modulePromise;
+ const word = {normalized:'feat',verification_status:'corrected',payload:{
+  senses:[featNoun,{pos:'verb',def_zh:'完成'}],
+  collocations:[
+   {pattern:'feat a goal',examples:[badFeatExample]},
+   {pattern:'remarkable goal',examples:[badFeatExample]},
+   featNounCollocation,
+  ],
+  source_examples:[badFeatExample,{en:'He feats a goal.'},featNounCollocation.examples[0]],
+  word_family:['feats','feated','feating'],
+ }};
+ const original = JSON.stringify(word);
+ const quality = Q.assessContent(word);
+ assert.deepEqual(quality.badCollocations,[0,1]);
+ assert.deepEqual(quality.payload.senses,[featNoun]);
+ assert.deepEqual(quality.payload.collocations,[featNounCollocation]);
+ assert.deepEqual(quality.payload.source_examples,featNounCollocation.examples);
+ assert.deepEqual(quality.payload.word_family,['feats']);
+ assert.equal(quality.blocked,false);
+ assert.equal(JSON.stringify(word),original);
+});
+
+test('feat repair offers a sourced noun example when all existing collocations are unsafe', async () => {
+ const Q = await modulePromise;
+ const word = {lemma:'feat',payload:{topic:'sports',senses:[{pos:'v.',def_zh:'进球'}],
+  collocations:[{pattern:'feat a goal',examples:[badFeatExample]}]}};
+ assert.equal(Q.assessContent(word).blocked,true);
+ const draft = Q.repairDraft(word);
+ assert.match(draft.source,/dictionary\.cambridge\.org/);
+ assert.equal(draft.payload.topic,'sports');
+ assert.deepEqual(draft.payload.pos,['noun']);
+ assert.equal(draft.payload.collocations[0].pattern,'a remarkable feat');
+ const repaired = {...word,payload:draft.payload};
+ assert.deepEqual(Q.assessContent(repaired).issues,[]);
+ assert.equal(Q.repairDraft(repaired),null);
+});
+
+test('stored feat and corpus corrections produce genuine noun blanks without changing records', async () => {
+  const Q = await modulePromise;
+  const cases = [
+    ['feat', 'feat (a) goal', badFeatExample.en],
+    ['corpus', 'corpus (a language)', 'The team corpus all the newspaper articles.'],
+  ];
+  for (const [lemma, pattern, en] of cases) {
+    const word = {id:1,lemma,verification_status:'corrected',payload:{
+      pos:['verb'],senses:[{pos:'noun',def_zh:'名词释义'}],collocations:[{pattern,type:'verb+noun',examples:[{en}]}],
+    }};
+    const original = JSON.stringify(word);
+    const learning = Q.learningWord(word);
+    const blank = Q.clozeOf(learning);
+    assert.equal(learning.id, word.id);
+    assert.equal(blank.answer, lemma);
+    assert.notEqual(blank.raw, en);
+    assert.equal(JSON.stringify(word), original);
+    assert.equal(Q.repairDraft(learning), null);
+  }
+});
+
+test('legacy nominal headwords keep their valid collocations while the displayed target and POS are corrected', async () => {
+  const Q = await modulePromise;
+  const approval = {normalized:'approval',lemma:'approve',payload:{lemma:'approve',pos:['verb'],
+    senses:[{pos:'noun',def_en:'officially agree to'}],collocations:[
+      {pattern:'give approval',examples:[{en:'The board gave final approval to the merger.'}]},
+    ]}};
+  const learned = Q.learningWord(approval);
+  assert.equal(learned.lemma, 'approval');
+  assert.deepEqual(learned.payload.pos, ['noun']);
+  assert.deepEqual(learned.payload.collocations, approval.payload.collocations);
+  assert.equal(Q.clozeOf(learned).answer, 'approval');
+  assert.equal(Q.repairDraft(learned), null);
+  assert.equal(approval.lemma, 'approve');
+});
+
+test('cloze finds complete word forms and does not promote related words to answers', async () => {
+  const Q = await modulePromise;
+  const word = (lemma, examples) => ({lemma,payload:{collocations:[{pattern:lemma,examples:examples.map(en => ({en}))}]}});
+  for (const [lemma, sentence, answer] of [
+    ['score','He scored a remarkable goal in the final minutes of the match.','scored'],
+    ['score','He scores a goal almost every week.','scores'],
+    ['approve','The board approved the proposal.','approved'],
+    ['approve','The board is approving fewer applications.','approving'],
+    ['feat','The team achieved remarkable feats this season.','feats'],
+    ['stem','The issue is stemming from a misunderstanding.','stemming'],
+    ['leap','She leapt at the chance.','leapt'],
+    ['corpus','They compared two corpora of news texts.','corpora'],
+    ['deal with','We dealt with the issue yesterday.','dealt with'],
+    ['go bankrupt','The company went bankrupt last year.','went bankrupt'],
+    ['go bankrupt','The company is going bankrupt.','going bankrupt'],
+    ['do business','We are doing business with them.','doing business'],
+    ['make arrangements for a follow-up appointment','They made arrangements for a follow-up appointment.','made arrangements for a follow-up appointment'],
+  ]) {
+    assert.equal(Q.clozeOf(word(lemma,[sentence]))?.answer, answer, lemma);
+    assert.equal(Q.containsClozeTarget(lemma,sentence), true, lemma);
+  }
+  for (const [lemma, sentence] of [
+    ['feat','We featured his photo.'],
+    ['solid','The lava began to solidify.'],
+    ['diagnose','The early diagnosis helped.'],
+    ['approve','The board gave final approval.'],
+    ['scalp','An online scalper bought the tickets.'],
+  ]) {
+    assert.equal(Q.clozeOf(word(lemma,[sentence])), null, lemma);
+    assert.equal(Q.containsClozeTarget(lemma,sentence), false, lemma);
+  }
+  assert.equal(Q.clozeOf(word('approve',['We need approval.','The board approved it.']))?.answer, 'approved');
 });

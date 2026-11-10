@@ -2,26 +2,26 @@
  * views.js — 全部页面
  * 每个页面导出 render()（返回 HTML）与 bind()（挂载事件），由 app.js 调度。
  */
-import * as S from './store.js?v=132'
-import * as FSRS from './fsrs.js?v=132'
-import { assessContent, repairDraft, learningWord } from './content-quality.js?v=132'
-import { CARD_TYPES, ENRICH_CONCURRENCY, RECOMMENDED_SETTINGS } from './config.js?v=132'
+import * as S from './store.js?v=133'
+import * as FSRS from './fsrs.js?v=133'
+import { assessContent, repairDraft, learningWord, clozeOf } from './content-quality.js?v=133'
+import { CARD_TYPES, ENRICH_CONCURRENCY, RECOMMENDED_SETTINGS } from './config.js?v=133'
 import {
   esc, $, $$, toast, fail, ok, openModal, closeModal, confirmDialog,
   icon, LOGO_SVG, speak, fmtDateCN, relTime, STRENGTH_ZH, REGISTER_ZH,
   listEnVoices, getVoicePref, setVoicePref, getTheme, applyTheme,
-} from './ui.js?v=132'
-import * as AUTH from './cloud.js?v=132'
-import * as ENRICH from './enrich.js?v=132'
-import * as EXP from './exporter.js?v=132'
-import { createReviewRunner, parseReviewReport, auditEntry, REVIEW_VERSION, REVIEW_TIMEOUT_MS } from './content-review.js?v=132'
-export { REVIEW_TIMEOUT_MS } from './content-review.js?v=132'
-import { parseImport, skippedLines, DEFAULT_MAX_WORDS } from './importer.js?v=132'
+} from './ui.js?v=133'
+import * as AUTH from './cloud.js?v=133'
+import * as ENRICH from './enrich.js?v=133'
+import * as EXP from './exporter.js?v=133'
+import { createReviewRunner, parseReviewReport, auditEntry, REVIEW_VERSION, REVIEW_TIMEOUT_MS } from './content-review.js?v=133'
+export { REVIEW_TIMEOUT_MS } from './content-review.js?v=133'
+import { parseImport, skippedLines, DEFAULT_MAX_WORDS } from './importer.js?v=133'
 
 import {
   judgeTyped, reviewSemantics, looksLikeEnglishPhrase, cachedVerdict, cachedReview, coachingFeedback, inflectionFeedback, articleDifference, reviewStatusText,
   HIT, ALT, WRONG, UNSURE,
-} from './judge.js?v=132'
+} from './judge.js?v=133'
 
 /* ═════════════════════════ 通用片段 ═════════════════════════ */
 
@@ -266,60 +266,6 @@ function wordAnswerHTML(word) {
     (senses ? '<ul class="senses">' + senses + '</ul>' : '') +
     colls + srcBlock + pending + conf + fam + mne + lowConf
   )
-}
-
-/** 从词条里挑一个可挖空的例句。
- *  关键点：AI 例句常用变形（搭配是 approve of，句子里写 approved / approving），
- *  后缀硬拼会漏掉 drop-e 形式（approv+ing），所以用**词干**匹配：
- *  approve / approved / approving / approves 都归到词干 approv。
- *  且空缺处的答案取句子里真实的那串字，否则用户填对了反而被判错。 */
-function stemEn(w) {
-  return String(w).toLowerCase()
-    .replace(/(ies|ied)$/, 'y')
-    .replace(/(ing|ed|es|s)$/, '')
-    .replace(/e$/, '')          // approve→approv：否则 approv+ing（丢了 e）匹配不上
-}
-
-function clozeOf(word) {
-  const colls = (word.payload && word.payload.collocations) || []
-  const term = String(word.lemma || word.normalized || '').trim()
-
-  const buildRe = (tokens) => {
-    const stems = tokens.map(stemEn).filter(Boolean)
-    if (!stems.length) return null
-    return new RegExp('\\b' + stems.map((st) => st.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\w*').join('\\s+') + '\\b', 'i')
-  }
-  const shoot = (en, re) => {
-    const m = String(en).match(re)
-    if (!m) return null
-    return { sentence: String(en).replace(re, '________'), answer: m[0] }
-  }
-
-  for (const c of colls) {
-    const ex = (c.examples || [])[0]
-    if (!ex || !ex.en) continue
-    const core = String(c.pattern || '').replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim()
-
-    /* ① 先挖「目标词本身」：答案是这个词条，学什么就填什么，判分口径唯一。
-       为什么把它放在整条搭配之前 —— 旧顺序先用整条 pattern 挖空，答案可达 2–6 词
-       （"overflowed with water"、"could be handled with discretion"），
-       用户只填核心词就被判错。实测（2862 次复习）：3 词以上词条错误率 7.8%，
-       是 1–2 词档（4.3%）的近两倍，而 phrase 类词条（in the order they were
-       received）本来就该填整条，不受此改动影响。 */
-    if (term) {
-      const re = buildRe(term.split(' '))
-      const hit = re ? shoot(ex.en, re) : null
-      if (hit) return { sentence: hit.sentence, zh: ex.zh, answer: hit.answer, raw: String(ex.en) }
-    }
-    /* ② 这个词条没有原样出现在这句里（例句只用到了搭配的一部分），
-       才退化为挖整条搭配 —— 保证仍能出题，不至于变成「无题可出」。 */
-    if (core) {
-      const re2 = buildRe(core.split(' '))
-      const hit2 = re2 ? shoot(ex.en, re2) : null
-      if (hit2) return { sentence: hit2.sentence, zh: ex.zh, answer: hit2.answer, raw: String(ex.en) }
-    }
-  }
-  return null
 }
 
 /** 例句里实在挖不出空时，退化成"看中文说搭配"，也比干看一个单词强。
@@ -1077,7 +1023,7 @@ export function sessionProgress() {
 export {
   normalizeAns, judgeTyped, looksLikeEnglishPhrase, reviewSemantics, cachedVerdict, cachedReview,
   clearJudgeCache, HIT, ALT, WRONG, UNSURE,
-} from './judge.js?v=132'
+} from './judge.js?v=133'
 
 const REG_ZH = { formal: '正式', neutral: '中性', spoken: '口语', informal: '非正式' }
 
@@ -2912,7 +2858,10 @@ function openWordDetail(group, onChanged) {
     '</div>'
   )
 
-  $('#wd-edit').onclick = () => openWordCorrection(word, onChanged)
+  $('#wd-edit').onclick = () => {
+    const draft = repairDraft(word)
+    openWordCorrection(word, onChanged, draft?.payload, draft?.source)
+  }
   $('#wd-speak').onclick = () => { if (!speak(word.lemma)) fail('当前环境不支持朗读') }
 
   $('#wd-regen').onclick = async () => {
@@ -3463,7 +3412,7 @@ function reviewPanelHTML() {
   const running = !!(st && st.running)
   const resume = st && st.ruleVersion === REVIEW_VERSION && !running && st.done < st.total
   const suspects = S.state.words.filter(w => assessContent(w).issues.length)
-  return '<details class="content-quality-scan"><summary style="min-height:44px;cursor:pointer;">参考用法检查：' + suspects.length + ' / ' + S.state.words.length + ' 个已加载词条需核对</summary><p class="tiny">本地规则检查，不调用 AI，不代表全库权威核验。问题义项和搭配已暂不用于练习；原文保留供核对。其他正确内容照常学习。</p>' +
+  return '<details class="content-quality-scan"><summary style="min-height:44px;cursor:pointer;">参考用法检查：' + suspects.length + ' / ' + S.state.words.length + ' 个已加载词条需核对</summary><p class="tiny">本地规则检查，不调用 AI，不代表全库权威核验。练习会使用已核实的替代内容，问题内容会被跳过。保存修正后，词库原文才会更新。</p>' +
     suspects.slice(0, 30).map(w => '<button class="btn sm" data-quality-word="' + w.id + '" style="min-height:44px;margin:4px;">核对 ' + esc(w.lemma || w.normalized) + '</button>').join('') +
     (suspects.length > 30 ? '<p>仅列出前 30 个，请修正后继续检查。</p>' : '') + '</details>' + reviewProgressHTML() + '<div class="btn-group">' +
     '<button class="btn' + (running ? '' : ' primary') + '" id="me-review-learned"' +

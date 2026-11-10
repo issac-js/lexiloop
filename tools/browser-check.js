@@ -71,6 +71,15 @@ async function main() {
             assert.equal(review.grade,3);assert.equal(review.verdict,'alt');await layout();
           }
         });
+        await check('existing feat card starts with a repaired noun example and accepts feat', async () => {
+          await open('feat-reference'); await tab('today'); await page.locator('#start-study').click();
+          assert.match(await page.locator('body').innerText(), /was a remarkable ________/);
+          assert.doesNotMatch(await page.locator('body').innerText(), /He ________ a remarkable goal/);
+          await page.locator('#ans-in').fill('feat'); await page.locator('#ans-go').click();
+          await page.locator('.verdict.good').waitFor();
+          assert.equal(await page.evaluate(() => window.__reviewMock.calls), 0);
+          assert.equal(await page.evaluate(() => window.__QA.snapshot().reviews.length), 0);
+        });
         await check('unsafe reference skips without FSRS, review or quota writes', async () => {
           await open('coaching'); await page.evaluate(() => { window.__reviewMock.mode = 'reference-invalid'; });
           const before = await page.evaluate(() => JSON.stringify(window.__QA.snapshot().cards));
