@@ -119,14 +119,29 @@ export function numberOnlyDifference(expected, given) {
   return plural(a,b)||plural(b,a) ? {index:i,expected:a,given:b} : null
 }
 const quantitySpecified = zh => /[0-9一二三四五六七八九十两几每各]|所有|全部|若干|许多|大量|一些|单数|复数|多项|多种/.test(String(zh||''))
+/* 整句填空时数量可能写在英文句子里（Several hotel ___ are available）。
+   只认真正的数量限定词，不把冠词 a/the 当数量 —— 否则每个句子都会被判成"已限定数量"。 */
+const englishQuantity = s => /\b(?:one|two|three|four|five|six|seven|eight|nine|ten|several|many|much|more|most|all|both|each|every|multiple|various|numerous|few|some|every)\b/i.test(String(s||''))
+const AMENITY_NUMBER = '这里没有限定设施数量，hotel amenity 可指一项酒店设施；泛指多项设施时常用 hotel amenities。'
+const amenityPair = (a, b) => ['amenity','amenities'].includes(a) && ['amenity','amenities'].includes(b)
 function reviewedNumberAlternative(given, expected, o) {
-  if(o.sentence || !o.zh || quantitySpecified(o.zh)) return null
+  /* 数量是否已被限定，要看句子和中文提示里有没有明确数量，
+     不能用"这题有句子"当代理条件 —— 一旦整句出现（v124 之后 cloze 都是整句填空），
+     所有名词单复数判定都会被整体作废，答案退化成必须走模型复核。 */
+  if(!o.zh || quantitySpecified(o.zh) || englishQuantity(o.sentence)) return null
+  const eWords=normalizeAns(expected).split(' '), gWords=normalizeAns(given).split(' ')
+  const head=eWords[eWords.length-1], tail=gWords[gWords.length-1]
+  /* v124 起 cloze 只挖核心词，expected 可能只剩 amenities，
+     而用户写出的是完整搭配 hotel amenity —— 词数不同，旧的等长比较判不出来。 */
+  if(eWords.length===1 && tail!==head){
+    const loose=numberOnlyDifference(head,tail)
+    if(loose && amenityPair(loose.expected,loose.given)) return AMENITY_NUMBER
+  }
   const pair=numberOnlyDifference(expected,given)
   // Cambridge: amenity is countable, usually plural, rather than plural-only.
   // Other nouns remain contextual; this does not strip s from operations/customs/news.
-  if(!pair || pair.index!==normalizeAns(expected).split(' ').length-1 ||
-      ![pair.expected,pair.given].every(x=>['amenity','amenities'].includes(x))) return null
-  return '这里没有限定设施数量，hotel amenity 可指一项酒店设施；泛指多项设施时常用 hotel amenities。'
+  if(!pair || pair.index!==eWords.length-1 || !amenityPair(pair.expected,pair.given)) return null
+  return AMENITY_NUMBER
 }
 
 export function judgeTyped(given, expected, opts) {

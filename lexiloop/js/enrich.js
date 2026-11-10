@@ -7,8 +7,8 @@
  *   2. 结构层面：强制 JSON 输出，字段枚举固定
  *   3. 校验层面：本地规则闸门，不通过的一律丢弃（宁可少，不可假）
  */
-import { assessContent } from './content-quality.js?v=132'
-import { chatText, pickModelAfter } from './cloud.js?v=132'
+import { assessContent, containsClozeTarget, repairDraft } from './content-quality.js?v=133'
+import { chatText, pickModelAfter } from './cloud.js?v=133'
 
 export const PROMPT_VERSION = 'colloc-v3'
 
@@ -133,6 +133,8 @@ function stemsFor(part) {
  *     另一侧保留，就永远匹配不上（这个 bug 曾让模型给出的正确搭配全部被拒）。
  *   · 占位符（sb/sth/one's…）与礼貌标记（please/kindly）不算实词。
  */
+const singleLexicalWord = term => /^[a-z]{3,}$/i.test(String(term || '').trim())
+
 export function mentionsTarget(term, text) {
   const tokens = words(text)
   const parts = words(term)
@@ -140,6 +142,7 @@ export function mentionsTarget(term, text) {
     .filter((p) => p && p.length >= 3 && !STOPWORDS.has(p) && !PLACEHOLDERS.has(p) && !POLITENESS.has(p))
   // 整个词条都是占位符/虚词时，退化为「只要文本里还有实词就算命中」
   if (!parts.length) return tokens.some((t) => t.length >= 3)
+  if (singleLexicalWord(term)) return containsClozeTarget(term, text)
   return parts.every((part) => {
     const st = stemsFor(part)
     return tokens.some((t) => {
@@ -169,10 +172,11 @@ export function validateEntry(raw, term) {
   }
 
   // Inspect original labels before normalizers can turn an unknown register into neutral.
-  const rawQuality = assessContent({normalized:term,payload:parsed})
+  const rawWord = {normalized:term,payload:parsed}
+  const rawQuality = assessContent(rawWord)
   if (rawQuality.issues.length) {
     notes.push(...rawQuality.issues)
-    parsed = rawQuality.payload
+    parsed = repairDraft(rawWord, rawQuality)?.payload || rawQuality.payload
   }
   const dropped = []
   const collocations = []
@@ -194,7 +198,7 @@ export function validateEntry(raw, term) {
         if (!e.en) return false
         const n = words(e.en).length
         if (n < 5 || n > 30) return false
-        return mentionsTarget(term, e.en) || containsChunk(e.en, pattern)
+        return mentionsTarget(term, e.en) || (!singleLexicalWord(term) && containsChunk(e.en, pattern))
       })
 
     if (examples.length === 0) {

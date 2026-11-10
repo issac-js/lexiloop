@@ -5,12 +5,12 @@
  * 再异步推到云端；换设备登录时从云端整体拉回。单用户跨设备不会并发改同一张卡，
  * 因此采用「以云端为权威 + 本地乐观更新」的简单模型。
  */
-import { db, getSession } from './cloud.js?v=132'
-import { LS_KEYS, DEFAULT_SETTINGS } from './config.js?v=132'
-import { learningWord, assessContent } from './content-quality.js?v=132'
-import * as FSRS from './fsrs.js?v=132'
+import { db, getSession } from './cloud.js?v=133'
+import { LS_KEYS, DEFAULT_SETTINGS } from './config.js?v=133'
+import { learningWord, assessContent, repairDraft } from './content-quality.js?v=133'
+import * as FSRS from './fsrs.js?v=133'
 /* 目标完成度的纯算术单独成模块，方便离线单测（工具页与今日页共用同一口径）。 */
-export { goalCompletion } from './goal-metrics.js?v=132'
+export { goalCompletion } from './goal-metrics.js?v=133'
 
 export const state = {
   booted: false,
@@ -76,7 +76,9 @@ export function wordOf(card) {
 }
 
 export function learningWordOf(card) { return learningWord(wordOf(card)) }
-export function learningWords() { return state.words.map(learningWord) }
+/* 必须包一层箭头函数：learningWord 的第二个参数是 quality，
+   直接把函数交给 map 会把数组索引当成 quality 传进去，导致 quality.issues 为 undefined 而崩溃。 */
+export function learningWords() { return state.words.map((w) => learningWord(w)) }
 
 /* ───────────────────────── 本地持久化 ───────────────────────── */
 
@@ -955,6 +957,7 @@ export async function correctWord(word, payload, source) {
   const row = { payload: next, verification_status: 'corrected',
     verify_note: '人工核对并修正；来源：' + next.correction_source,
     verified_at: new Date().toISOString(), updated_at: new Date(Math.max(Date.now(), Date.parse(word.updated_at) + 1)).toISOString() }
+  if (payload.lemma && payload.lemma !== word.lemma && payload.lemma === repairDraft(word)?.payload.lemma) row.lemma = payload.lemma
   const res = await db().from('words').update(row).eq('normalized', word.normalized).eq('updated_at', word.updated_at).select()
   if (res.error) throw res.error
   if (!Array.isArray(res.data) || res.data.length !== 1) throw Error('词条已被更新，请同步后重新核对差异')
@@ -1371,11 +1374,10 @@ export function blockReason(w) {
   const st = w.verification_status
   if (st === 'flagged' || st === 'suspect') return 'review'
   const quality = assessContent(w)
-  if (quality.blocked && quality.issues.length) return 'review'
-  const p = quality.payload
+  const p = learningWord(w, quality).payload
   const senses = Array.isArray(p.senses) ? p.senses.filter((x) => x && (x.def_zh || x.def_en)) : []
   const colls = Array.isArray(p.collocations) ? p.collocations.filter((x) => x && x.pattern) : []
-  if (!senses.length && !colls.length) return 'empty'
+  if (!senses.length && !colls.length) return quality.blocked && quality.issues.length ? 'review' : 'empty'
   return ''
 }
 
