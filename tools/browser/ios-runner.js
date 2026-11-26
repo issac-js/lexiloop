@@ -39,6 +39,27 @@ trigger.onclick = async () => {
     }
     return measurements;
   });
+  await check('workplace phone phrases, report and original card open on Safari', async () => {
+    await reset('workplace-topics');
+    const before = window.__QA.snapshot();
+    await tap('[data-tab=library]'); await tap('[data-libview=topics]');
+    await tap('[data-topic-open=traffic]');
+    const copy = document.querySelector('[data-topic-copy="0"]');
+    assert(document.querySelector('.topic-phrase p').textContent === 'Is anyone injured?', 'Injury question missing');
+    assert(copy.getBoundingClientRect().height >= 44, 'Copy target too small');
+    const report = document.querySelector('[data-topic-section=report]');
+    assert(!report.open, 'Report expanded by default');
+    await tap('[data-topic-section=report] > summary');
+    assert(report.open, 'Report did not expand');
+    assert(document.documentElement.scrollWidth <= innerWidth + 1, 'Workplace topic overflows');
+    await tap('[data-topic-section=report] [data-topic-expression=collision]');
+    await tap('#topic-open-word');
+    assert(document.querySelector('.modal h3')?.textContent === 'collision', 'Original entry did not open');
+    document.querySelector('#modal-wrap').click(); await tap('[data-libview=list]');
+    const after = window.__QA.snapshot();
+    assert(JSON.stringify([after.cards, after.reviews, after.words]) === JSON.stringify([before.cards, before.reviews, before.words]), 'Viewing changed learning data');
+    await reset('normal');
+  });
   await check('recorded achievement and 39 due cards are explained separately at 88% current progress', async () => {
     await reset('goal-recorded');
     const note = document.querySelector('#goal-status-note');

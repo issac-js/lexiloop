@@ -39,7 +39,7 @@ python -B tools/release_bundle.py --sha FULL_SHA
 
 FULL_SHA 必须是这个 checkout 的完整提交 SHA，不可随意填写。打包命令仅校验
 SHA 格式，不证明工作区未修改；自动 CI 以固定 SHA checkout 保证来源对应。
-ZIP 内的 release.json 记录 source_sha、app_version 和 24 个公开资源的 SHA-256（自 v110 起）。
+ZIP 内的 release.json 记录 source_sha、app_version 和本次全部公开资源的 SHA-256。
 它是版本标记，不是数字签名；不要把发布包放入 Git。
 
 ### Windows 换行与来源一致性

@@ -52,6 +52,14 @@
         due: new Date(Date.now() - (name === 'overdue' && i === 1 ? 2 * 86400000 : 60000)).toISOString(),
         stability: isNew ? 0 : 5, difficulty: 5, reps: isNew ? 0 : 5, lapses: 0, last_review_at: new Date(Date.now() - 3 * 86400000).toISOString() });
     }
+    if (name === 'workplace-topics') {
+      const entry = (id, term, meaning, verification_status = 'verified') => ({
+        id, normalized: term, lemma: term, verification_status,
+        payload: { senses: [{ pos: 'noun', def_zh: meaning }] },
+      });
+      words[0] = entry(1, 'collision', '碰撞');
+      words.push(entry(120, 'liability', '责任'), entry(121, 'injury', '伤害', 'suspect'));
+    }
     const recorded = name === 'goal-recorded';
     if (recorded) for (const c of cards.slice(0, 67)) {
       c.due = new Date(Date.now() + 86400000).toISOString(); c.last_review_at = new Date().toISOString();
@@ -68,7 +76,7 @@
   if (!data) data = fresh(scenario);
   function save() { localStorage.setItem(key(), JSON.stringify(data)); }
   function query(table) {
-    let filters = [], from = 0, end = Infinity, maximum = Infinity, count = false, head = false, write, writeMode, updatedRows;
+    let filters = [], from = 0, end = Infinity, maximum = Infinity, count = false, head = false, write, writeMode, updatedRows, writeOptions;
     const q = {
       select(_columns, opts = {}) { count = opts.count === 'exact'; head = !!opts.head; return q; },
       order() { return q; }, limit(n) { maximum = n; return q; },
@@ -77,7 +85,7 @@
       eq(field, value) { filters.push((row) => row[field] === value); return q; },
       lt(field, value) { filters.push(row => row[field] < value); return q; },
       gte(field, value) { filters.push((row) => row[field] >= value); return q; },
-      upsert(row) { write = row; writeMode = 'upsert'; return q; },
+      upsert(row, options) { write = row; writeOptions = options; writeMode = 'upsert'; return q; },
       update(row) { write = row; writeMode = 'update'; return q; },
       maybeSingle: async () => ({ data: table === 'settings' ? clone(data.settings) : null, error: null }),
       then(resolve, reject) {
@@ -86,6 +94,14 @@
             if (table === 'words' && writeMode === 'update') {
               updatedRows = data.words.filter(row => filters.every(filter => filter(row)));
               updatedRows.forEach(row => Object.assign(row, clone(write)));
+            } else if (table === 'cards' && writeMode === 'upsert' && scenario === 'workplace-topics') {
+              if (writeOptions?.onConflict !== 'owner_id,word_id,card_type' || !writeOptions.ignoreDuplicates) throw Error('Missing card dedupe');
+              updatedRows = [];
+              for (const row of write) {
+                if (data.cards.some(card => card.word_id === row.word_id && card.card_type === row.card_type)) continue;
+                const card = { ...row, owner_id: 'browser-fixture-' + scenario, id: data.cards.length + 1, reps: 0, lapses: 0 };
+                data.cards.push(card); updatedRows.push(card);
+              }
             } else if (table === 'settings') data.settings = clone(write);
             else if (table === 'goal_days') {
               for (const row of Array.isArray(write) ? write : [write]) if (!data.goals.some((g) => g.day === row.day)) data.goals.push(clone(row));
