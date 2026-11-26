@@ -705,3 +705,55 @@ textarea.input { resize: vertical; min-height: 120px; line-height: 1.6; }
   .study-grade-bar p { margin: 4px 0 !important; font-size: 11px; }
   body.kbd .study-grade-bar { position: static; padding: 0; border: 0; box-shadow: none; }
 }
+
+/* Workplace phrasebook in the library. */
+.library-sections { margin-bottom: 12px; }
+.library-sections button { min-height: 44px; }
+.topic-choice {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  min-height: 52px;
+  padding: 12px 14px;
+  color: var(--ink);
+  text-align: start;
+  cursor: pointer;
+}
+.topic-toolbar { gap: 8px; margin-block: 8px 12px; }
+.workplace-topic h2 { margin: 0 0 12px; }
+.topic-quick h3 { font-size: 1rem; margin: 4px 0; }
+.topic-quick h3:not(:first-child) { margin-top: 12px; }
+.topic-phrase {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+.topic-phrase > div:first-child { flex: 1 1 205px; min-width: 0; }
+.topic-phrase p { margin: 3px 0 0; }
+.topic-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.topic-actions .btn, .topic-toolbar .btn { min-height: 44px; }
+.topic-disclosure > summary {
+  min-height: 44px;
+  padding-block: 10px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.topic-disclosure p { margin: 8px 0 12px; line-height: 1.6; }
+.topic-expression {
+  display: inline;
+  padding: 1px 3px;
+  border: 0;
+  border-radius: 4px;
+  background: var(--brand-soft);
+  color: var(--brand);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.topic-status { margin: 4px 0; flex-basis: 100%; }

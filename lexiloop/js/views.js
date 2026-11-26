@@ -2,26 +2,27 @@
  * views.js — 全部页面
  * 每个页面导出 render()（返回 HTML）与 bind()（挂载事件），由 app.js 调度。
  */
-import * as S from './store.js?v=133'
-import * as FSRS from './fsrs.js?v=133'
-import { assessContent, repairDraft, learningWord, clozeOf } from './content-quality.js?v=133'
-import { CARD_TYPES, ENRICH_CONCURRENCY, RECOMMENDED_SETTINGS } from './config.js?v=133'
+import * as S from './store.js?v=134'
+import * as FSRS from './fsrs.js?v=134'
+import { assessContent, repairDraft, learningWord, clozeOf } from './content-quality.js?v=134'
+import { CARD_TYPES, ENRICH_CONCURRENCY, RECOMMENDED_SETTINGS } from './config.js?v=134'
 import {
   esc, $, $$, toast, fail, ok, openModal, closeModal, confirmDialog,
   icon, LOGO_SVG, speak, fmtDateCN, relTime, STRENGTH_ZH, REGISTER_ZH,
   listEnVoices, getVoicePref, setVoicePref, getTheme, applyTheme,
-} from './ui.js?v=133'
-import * as AUTH from './cloud.js?v=133'
-import * as ENRICH from './enrich.js?v=133'
-import * as EXP from './exporter.js?v=133'
-import { createReviewRunner, parseReviewReport, auditEntry, REVIEW_VERSION, REVIEW_TIMEOUT_MS } from './content-review.js?v=133'
-export { REVIEW_TIMEOUT_MS } from './content-review.js?v=133'
-import { parseImport, skippedLines, DEFAULT_MAX_WORDS } from './importer.js?v=133'
+} from './ui.js?v=134'
+import * as AUTH from './cloud.js?v=134'
+import * as ENRICH from './enrich.js?v=134'
+import * as EXP from './exporter.js?v=134'
+import { createReviewRunner, parseReviewReport, auditEntry, REVIEW_VERSION, REVIEW_TIMEOUT_MS } from './content-review.js?v=134'
+export { REVIEW_TIMEOUT_MS } from './content-review.js?v=134'
+import { parseImport, skippedLines, DEFAULT_MAX_WORDS } from './importer.js?v=134'
+import { bindTopics, renderTopics } from './topics.js?v=134'
 
 import {
   judgeTyped, reviewSemantics, looksLikeEnglishPhrase, cachedVerdict, cachedReview, coachingFeedback, inflectionFeedback, articleDifference, reviewStatusText,
   HIT, ALT, WRONG, UNSURE,
-} from './judge.js?v=133'
+} from './judge.js?v=134'
 
 /* ═════════════════════════ 通用片段 ═════════════════════════ */
 
@@ -1023,7 +1024,7 @@ export function sessionProgress() {
 export {
   normalizeAns, judgeTyped, looksLikeEnglishPhrase, reviewSemantics, cachedVerdict, cachedReview,
   clearJudgeCache, HIT, ALT, WRONG, UNSURE,
-} from './judge.js?v=133'
+} from './judge.js?v=134'
 
 const REG_ZH = { formal: '正式', neutral: '中性', spoken: '口语', informal: '非正式' }
 
@@ -2194,7 +2195,18 @@ function renderMasteryMap() {
     '点方块可直接查看该词。章节来自你导入文档的结构。</p>' + sections
 }
 
+function librarySections() {
+  return '<div class="seg library-sections" role="group" aria-label="词库视图">' +
+    [['list', '列表'], ['map', '掌握度地图'], ['topics', '专题范文']].map(([key, label]) =>
+      '<button type="button" data-libview="' + key + '" class="' + (libFilter.view === key ? 'on' : '') +
+      '" aria-pressed="' + (libFilter.view === key) + '">' + label + '</button>').join('') + '</div>'
+}
+
 export function renderLibrary() {
+  if (libFilter.view === 'topics') {
+    return '<h1 class="page">词库</h1>' + librarySections() +
+      '<div id="workplace-topics">' + renderTopics() + '</div>'
+  }
   const decks = Array.from(new Set(S.state.cards.map((c) => c.deck).filter(Boolean)))
   const pending = S.state.words.filter(needsEnrich).length
   const wordCount = new Set(S.state.cards.map((c) => c.word_id)).size
@@ -2202,9 +2214,7 @@ export function renderLibrary() {
   if (libFilter.view === 'map') {
     return '<h1 class="page">词库<span class="sub">掌握度地图　｜　共 ' + wordCount +
       ' 个词条（' + S.state.cards.length + ' 张卡）</span></h1>' +
-      '<div class="seg" style="margin-bottom:12px;">' +
-      '<button data-libview="list" class="off">列表</button>' +
-      '<button data-libview="map" class="on">掌握度地图</button></div>' +
+      librarySections() +
       // 地图视图下同样要有导入/导出入口，否则切到地图就没法导了
       '<div class="btn-group" style="margin-bottom:12px;">' +
       '<button class="btn primary" id="lib-import">' + icon('plus', 18) + ' 导入词条</button>' +
@@ -2221,9 +2231,7 @@ export function renderLibrary() {
     '<h1 class="page">词库<span class="sub">共 ' + wordCount + ' 个词条（' +
     S.state.cards.length + ' 张卡）　｜　' + decks.length + ' 个词单</span></h1>' +
 
-    '<div class="seg" style="margin-bottom:12px;">' +
-    '<button data-libview="list" class="on">列表</button>' +
-    '<button data-libview="map">掌握度地图</button></div>' +
+    librarySections() +
 
     (pending
       ? '<div class="card tight" style="background:var(--warn-soft);border-color:transparent;">' +
@@ -2262,6 +2270,13 @@ export function renderLibrary() {
 }
 
 export function bindLibrary(onChanged) {
+  $$('[data-libview]').forEach((b) => {
+    b.onclick = () => { libFilter.view = b.dataset.libview; onChanged() }
+  })
+  if (libFilter.view === 'topics') {
+    bindTopics((word, cards) => openWordDetail({ word, cards }, onChanged))
+    return
+  }
   const more = $('#lib-more')
   if (more) more.onclick = () => {
     libFilter.limit = (Number(libFilter.limit) || 200) + 200
@@ -2282,9 +2297,6 @@ export function bindLibrary(onChanged) {
     try { localStorage.removeItem(LAST_IMPORT_KEY) } catch (e) { /* ignore */ }
     onChanged()
   }
-  $$('[data-libview]').forEach((b) => {
-    b.onclick = () => { libFilter.view = b.dataset.libview; onChanged() }
-  })
   $$('.mm-cell').forEach((b) => {
     b.onclick = () => {
       const wid = String(b.dataset.wid)
