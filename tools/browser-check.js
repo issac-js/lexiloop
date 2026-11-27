@@ -61,10 +61,12 @@ async function main() {
           await open('workplace-topics');
           const before = await page.evaluate(() => window.__QA.snapshot());
           await tab('library'); await page.locator('[data-libview=topics]').click();
-          assert.equal(await page.locator('[data-topic-open]').count(), 4);
+          assert.equal(await page.locator('[data-topic-open]').count(), 6);
           const search = page.locator('#topic-search');
           await search.fill('受伤'); assert.equal(await page.locator('[data-topic-open]').count(), 1);
-          await search.fill('injuries'); assert.equal(await page.locator('[data-topic-open]').count(), 1);
+          await search.fill('injuries');
+          assert.deepEqual(await page.locator('[data-topic-open]').evaluateAll((buttons) =>
+            buttons.map(button => button.dataset.topicOpen).sort()), ['personal-dispute', 'traffic']);
           await search.fill('liability'); assert.equal(await page.locator('[data-topic-open]').count(), 1);
           await page.locator('[data-topic-open=traffic]').click();
           assert.equal(await page.locator('.topic-phrase p').first().innerText(), 'Is anyone injured?');
@@ -118,6 +120,24 @@ async function main() {
           assert.equal(await page.evaluate(() => window.__reviewMock.calls), 0);
           await page.locator('#topic-term-close').click(); await page.locator('#topic-back').click();
           await search.fill(''); assert.match(await page.locator('[data-topic-open=traffic]').innerText(), /已收藏/);
+          for (const [term, id, title, selfCheck] of [
+            ['receiving hospital', 'medical-transport', '医疗转运', /区分车到接人点/],
+            ['口角', 'personal-dispute', '个人纠纷', /把双方陈述分别归到各自名下/],
+          ]) {
+            await search.fill(term);
+            assert.equal(await page.locator('[data-topic-open]').count(), 1);
+            await page.locator('[data-topic-open=' + id + ']').click();
+            assert.equal(await page.locator('#topic-title').innerText(), title);
+            const practice = page.locator('[data-topic-section=exercise]');
+            await practice.locator(':scope > summary').click();
+            const answer = practice.locator('[data-topic-section=answer]');
+            assert.equal(await answer.getAttribute('open'), null);
+            await answer.locator('summary').click();
+            assert.match(await answer.innerText(), selfCheck);
+            await layout();
+            await page.locator('#topic-back').click();
+          }
+          assert.deepEqual(await page.evaluate(() => window.__QA.snapshot()), after);
           await layout();
         });
         await check('screenshot noun-number answers receive positive guidance without AI or an Again suggestion', async () => {

@@ -1,7 +1,7 @@
-import * as S from './store.js?v=136'
-import { $, closeModal, esc, openModal, speak } from './ui.js?v=136'
-import { copyText } from './exporter.js?v=136'
-import { workplaceTopics } from './topic-content.js?v=136'
+import * as S from './store.js?v=137'
+import { $, closeModal, esc, openModal, speak } from './ui.js?v=137'
+import { copyText } from './exporter.js?v=137'
+import { workplaceTopics } from './topic-content.js?v=137'
 
 let selected = ''
 let query = ''
@@ -82,7 +82,8 @@ export function renderTopics() {
     '</div></details>' +
     disclosure('exercise', '换个情境说一遍', true) +
     '<p>' + esc(topic.exercise.cue) + '</p>' + disclosure('answer', '查看参考表达') +
-    '<p lang="en">' + esc(topic.exercise.answer) + '</p></details></details></section>'
+    '<p lang="en">' + esc(topic.exercise.answer) + '</p><p class="tiny"><strong>自查</strong> ' +
+    esc(topic.exercise.check) + '</p></details></details></section>'
 }
 
 function showExpression(expression, showWord) {
