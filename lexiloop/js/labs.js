@@ -3,9 +3,9 @@
  * 与 game.js 的关系：labs 自己不持有 mode 状态，由 game.js 用 hasLab/renderLab/bindLab
  * 三个入口调用，避免两个模块互相 import 成环。
  */
-import * as S from './store.js?v=135'
-import { $, $$, esc, icon, toast, fail, ok, speak } from './ui.js?v=135'
-import { normalizeAns, judgeTyped, buildChoices, whyNote, whyBlockHTML } from './views.js?v=135'
+import * as S from './store.js?v=136'
+import { $, $$, esc, icon, toast, fail, ok, speak } from './ui.js?v=136'
+import { normalizeAns, judgeTyped, buildChoices, whyNote, whyBlockHTML } from './views.js?v=136'
 
 export const LAB_MODES = ['battle', 'sentence', 'speech']
 

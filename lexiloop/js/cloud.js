@@ -4,7 +4,7 @@
  * 统一收口三件事：初始化 SDK、邮箱认证、数据库读写、模型调用。
  * 其他模块一律通过本文件访问云端，不得自行 fetch '/.cloud/**'，也不得引入第二个客户端。
  */
-import { CLOUD_CONFIG } from './config.js?v=135'
+import { CLOUD_CONFIG } from './config.js?v=136'
 
 let cloud = null
 
