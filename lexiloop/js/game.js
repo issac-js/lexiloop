@@ -4,18 +4,18 @@
  * 因此游戏本身不计分；结束时给一个**可选**的"把这次表现记进复习计划"，
  * 由用户自己决定是否写入调度（避免游戏手感污染记忆曲线）。
  */
-import * as S from './store.js?v=136'
-import * as CLOUD from './cloud.js?v=136'
-import { $, $$, esc, icon, toast, fail, ok, speak, openModal, closeModal, confirmDialog } from './ui.js?v=136'
+import * as S from './store.js?v=137'
+import * as CLOUD from './cloud.js?v=137'
+import { $, $$, esc, icon, toast, fail, ok, speak, openModal, closeModal, confirmDialog } from './ui.js?v=137'
 import {
   normalizeAns, judgeTyped, buildChoices, whyNote, whyBlockHTML, verdictHTML,
   reviewSemantics, looksLikeEnglishPhrase, cachedVerdict, cachedReview,
   dataStateCard,
   HIT, ALT, WRONG, UNSURE,
-} from './views.js?v=136'
-import * as LABS from './labs.js?v=136'
-import * as FOCUS from './focus.js?v=136'
-import * as TRANSFER from './transfer.js?v=136'
+} from './views.js?v=137'
+import * as LABS from './labs.js?v=137'
+import * as FOCUS from './focus.js?v=137'
+import * as TRANSFER from './transfer.js?v=137'
 
 const G = { mode: null, match: null, dict: null, quiz: null, chat: null, timer: null, story: null, size: 0 }
 

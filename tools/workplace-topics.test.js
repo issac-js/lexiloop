@@ -1,9 +1,11 @@
 const assert = require('node:assert/strict')
 const test = require('node:test')
 
-test('four bilingual topics have usable lines, complete reports, and valid expression references', async () => {
+test('six bilingual topics have usable lines, complete reports, and valid expression references', async () => {
   const { workplaceTopics } = await import('../lexiloop/js/topic-content.js')
-  assert.deepEqual(workplaceTopics.map(topic => topic.id), ['traffic', 'payment', 'drone', 'missing'])
+  assert.deepEqual(workplaceTopics.map(topic => topic.id), [
+    'traffic', 'payment', 'drone', 'missing', 'medical-transport', 'personal-dispute',
+  ])
   for (const topic of workplaceTopics) {
     assert.ok(topic.intake.length >= 2 && topic.handover.length >= 2)
     for (const [zh, en] of [...topic.intake, ...topic.handover]) {
@@ -19,11 +21,15 @@ test('four bilingual topics have usable lines, complete reports, and valid expre
       return key
     }))
     assert.deepEqual([...keys].sort(), Object.keys(topic.expressions).sort())
-    for (const [term, meaning, note] of Object.values(topic.expressions)) {
+    for (const [term, meaning, note, lookup] of Object.values(topic.expressions)) {
       assert.ok(term && meaning && note)
+      const keys = [lookup].flat()
+      assert.ok(keys.length)
+      for (const key of keys) assert.match(key, /^[a-z]+(?:[ -][a-z]+)*$/, topic.id + ': ' + term)
     }
     assert.match(topic.exercise.cue, /\p{Script=Han}/u)
     assert.match(topic.exercise.answer, /[a-z]\.$/i)
+    assert.match(topic.exercise.check, /\p{Script=Han}/u)
   }
   const traffic = workplaceTopics[0]
   assert.equal(traffic.intake[0][1], 'Is anyone injured?')
