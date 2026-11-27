@@ -58,7 +58,9 @@
         payload: { senses: [{ pos: 'noun', def_zh: meaning }] },
       });
       words[0] = entry(1, 'collision', '碰撞');
-      words.push(entry(120, 'liability', '责任'), entry(121, 'injury', '伤害', 'suspect'));
+      words[1] = entry(2, 'arrange', '安排');
+      words.push(entry(120, 'liability', '责任'), entry(121, 'injury', '伤害', 'suspect'),
+        entry(122, 'arrange transport', '安排转运'), entry(123, 'review', '查看'));
     }
     const recorded = name === 'goal-recorded';
     if (recorded) for (const c of cards.slice(0, 67)) {

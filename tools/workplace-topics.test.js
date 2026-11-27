@@ -21,9 +21,11 @@ test('six bilingual topics have usable lines, complete reports, and valid expres
       return key
     }))
     assert.deepEqual([...keys].sort(), Object.keys(topic.expressions).sort())
-    for (const [term, meaning, note, normalized] of Object.values(topic.expressions)) {
+    for (const [term, meaning, note, lookup] of Object.values(topic.expressions)) {
       assert.ok(term && meaning && note)
-      assert.match(normalized, /^[a-z]+(?:[ -][a-z]+)*$/, topic.id + ': ' + term)
+      const keys = [lookup].flat()
+      assert.ok(keys.length)
+      for (const key of keys) assert.match(key, /^[a-z]+(?:[ -][a-z]+)*$/, topic.id + ': ' + term)
     }
     assert.match(topic.exercise.cue, /\p{Script=Han}/u)
     assert.match(topic.exercise.answer, /[a-z]\.$/i)

@@ -87,7 +87,7 @@ export function renderTopics() {
 }
 
 function showExpression(expression, showWord) {
-  const [term, meaning, note, normalized] = expression
+  const [term, meaning, note, lookup] = expression
   openModal('<h3 lang="en">' + esc(term) + '</h3><p>' + esc(meaning) + '</p>' +
     '<p class="sub">' + esc(note) + '</p><div id="topic-word-actions" class="topic-actions"></div>' +
     '<div class="modal-actions"><button type="button" class="btn sm" id="topic-term-voice">朗读</button>' +
@@ -95,14 +95,17 @@ function showExpression(expression, showWord) {
   $('#topic-term-voice').onclick = () => readAloud(term)
   $('#topic-term-close').onclick = closeModal
   const panel = $('#topic-word-actions')
-  if (!normalized) return
+  const keys = [lookup].flat().filter(Boolean)
+  if (!keys.length) return
+  const canStudy = (word) => word && !S.isBlockedWord(word)
+  const hasCard = (card, word) => String(card.word_id) === String(word.id)
   const bindWord = (word) => {
     if (!panel.isConnected) return
-    if (!word || S.isBlockedWord(word)) {
+    if (!word) {
       panel.textContent = '本表达可在专题中查阅。'
       return
     }
-    const cards = S.state.cards.filter((card) => String(card.word_id) === String(word.id))
+    const cards = S.state.cards.filter((card) => hasCard(card, word))
     if (cards.length) {
       panel.innerHTML = '<button type="button" class="btn sm" id="topic-open-word">查看原词卡</button>'
       $('#topic-open-word').onclick = () => showWord(word, cards)
@@ -132,10 +135,15 @@ function showExpression(expression, showWord) {
       S.syncPull().catch(() => {})
     }
   }
-  const existing = S.state.words.find((word) => word.normalized === normalized)
+  // A phrase can be stored under its headword. Prefer a word the learner already studies.
+  const local = keys.map((key) => S.state.words.find((word) => word.normalized === key))
+  const available = local.filter(canStudy)
+  const existing = available.find((word) => S.state.cards.some((card) => hasCard(card, word))) || available[0]
   if (existing) return bindWord(existing)
+  const missing = keys.filter((_, index) => !local[index])
+  if (!missing.length) return bindWord()
   panel.textContent = '正在查找词条…'
-  S.findWords([normalized]).then((words) => bindWord(words.get(normalized))).catch(() => {
+  S.findWords(missing).then((words) => bindWord(missing.map((key) => words.get(key)).find(canStudy))).catch(() => {
     if (panel.isConnected) panel.textContent = '暂时无法连接词库。'
   })
 }

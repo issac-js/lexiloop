@@ -57,7 +57,7 @@ async function main() {
           if (measure.coarse) for (const label of measure.labels) assert.ok(label.height >= 44, 'small touch target: ' + JSON.stringify(label));
           return measure;
         };
-        await check('workplace topics surface phone phrases, open original cards, and add only on request', async () => {
+        await check('workplace topics surface phone phrases, find existing vocabulary, and add only on request', async () => {
           await open('workplace-topics');
           const before = await page.evaluate(() => window.__QA.snapshot());
           await tab('library'); await page.locator('[data-libview=topics]').click();
@@ -120,6 +120,13 @@ async function main() {
           assert.equal(await page.evaluate(() => window.__reviewMock.calls), 0);
           await page.locator('#topic-term-close').click(); await page.locator('#topic-back').click();
           await search.fill(''); assert.match(await page.locator('[data-topic-open=traffic]').innerText(), /已收藏/);
+          await search.fill('surveillance footage');
+          await page.locator('[data-topic-open=drone]').click();
+          const droneReport = page.locator('[data-topic-section=report]');
+          await droneReport.locator(':scope > summary').click();
+          await droneReport.locator('[data-topic-expression=footage]').click();
+          await page.locator('#topic-add-card').waitFor();
+          await page.locator('#topic-term-close').click(); await page.locator('#topic-back').click();
           for (const [term, id, title, selfCheck] of [
             ['receiving hospital', 'medical-transport', '医疗转运', /区分车到接人点/],
             ['口角', 'personal-dispute', '个人纠纷', /把双方陈述分别归到各自名下/],
@@ -128,6 +135,15 @@ async function main() {
             assert.equal(await page.locator('[data-topic-open]').count(), 1);
             await page.locator('[data-topic-open=' + id + ']').click();
             assert.equal(await page.locator('#topic-title').innerText(), title);
+            if (id === 'medical-transport') {
+              const medicalReport = page.locator('[data-topic-section=report]');
+              await medicalReport.locator(':scope > summary').click();
+              await medicalReport.locator('[data-topic-expression="medical transport"]').click();
+              await page.locator('#topic-open-word').click();
+              await page.locator('#wd-speak').waitFor();
+              assert.equal(await page.locator('.modal h3').first().innerText(), 'arrange');
+              await page.keyboard.press('Escape');
+            }
             const practice = page.locator('[data-topic-section=exercise]');
             await practice.locator(':scope > summary').click();
             const answer = practice.locator('[data-topic-section=answer]');
