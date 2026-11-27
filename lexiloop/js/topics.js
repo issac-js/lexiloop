@@ -1,7 +1,7 @@
-import * as S from './store.js?v=134'
-import { $, closeModal, esc, openModal, speak } from './ui.js?v=134'
-import { copyText } from './exporter.js?v=134'
-import { workplaceTopics } from './topic-content.js?v=134'
+import * as S from './store.js?v=135'
+import { $, closeModal, esc, openModal, speak } from './ui.js?v=135'
+import { copyText } from './exporter.js?v=135'
+import { workplaceTopics } from './topic-content.js?v=135'
 
 let selected = ''
 let query = ''

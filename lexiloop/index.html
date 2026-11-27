@@ -10,11 +10,32 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="搭配记忆">
 <title>英语搭配记忆</title>
-<link rel="manifest" href="manifest.webmanifest?v=134">
+<link rel="manifest" href="manifest.webmanifest?v=135">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <meta name="format-detection" content="telephone=no">
 <link rel="apple-touch-icon" sizes="180x180" href="icon-180.png">
 <link rel="apple-touch-icon" sizes="192x192" href="icon-192.png">
+<script>
+  /* 平台用 sharecode 做访问门禁时，图标和 manifest 的请求也要带上访问码。
+     iOS「添加到主屏幕」由独立抓取器去取 icon-180.png，它既不带 cookie 也不带查询串，
+     拿到 403 就抓不到图标，只能退化成「主题色底 + 标题首字」的占位图标。
+     这里不硬编码访问码（那是环境的，写进仓库等于把它固化成公开值）：
+     优先取当前地址里的，取不到再用上次记住的。 */
+  (function () {
+    var code = ''
+    try {
+      code = new URLSearchParams(location.search).get('sharecode') || localStorage.getItem('lexiloop.sharecode.v1') || ''
+      if (code) localStorage.setItem('lexiloop.sharecode.v1', code)
+    } catch (e) { /* 隐私模式下存储读写会抛，按无访问码处理 */ }
+    if (!code) return
+    var links = document.querySelectorAll('link[rel="apple-touch-icon"],link[rel="manifest"]')
+    for (var i = 0; i < links.length; i++) {
+      var href = links[i].getAttribute('href') || ''
+      if (!href || href.indexOf('sharecode=') >= 0) continue
+      links[i].setAttribute('href', href + (href.indexOf('?') < 0 ? '?' : '&') + 'sharecode=' + encodeURIComponent(code))
+    }
+  })()
+</script>
 <script>
   // 主题要在样式生效前定下来，否则会闪一下默认色
   try {
@@ -22,7 +43,7 @@
     document.documentElement.setAttribute('data-theme', t === 'violet' ? 'violet' : 'green')
   } catch (e) { document.documentElement.setAttribute('data-theme', 'green') }
 </script>
-<link rel="stylesheet" href="styles.css?v=134">
+<link rel="stylesheet" href="styles.css?v=135">
 </head>
 <body>
 <div id="root" class="root">
@@ -43,7 +64,7 @@
      （必须同步，否则后面的 js/app.js 是 type=module，会先于异步插入的脚本执行）。 -->
 <script src="vendor/workbuddy-cloud-sdk.js"></script>
 <script>window.WorkBuddyCloud||document.write('<script src="https://cdn.jsdelivr.net/npm/@tencent-ai/workbuddy-cloud-sdk@dev/lib/index.global.js"><\/script>')</script>
-<script type="module" src="js/app.js?v=134"></script>
+<script type="module" src="js/app.js?v=135"></script>
 <script>
   // 启动看门狗：一直转圈是最糟糕的状态——用户既不知道原因，也没法自救。
   // 9 秒还没起来就换成一屏"能点的"提示（强制刷新 / 清缓存重载）。
